@@ -23,6 +23,7 @@ type File struct {
 	Memory          bool     `toml:"memory"`
 	ToolIDs         []string `toml:"tool_ids,omitempty"`
 	TerminalID      string   `toml:"terminal_id,omitempty"`
+	ShowAll         bool     `toml:"show_all"`
 	Path            string   `toml:"-"`
 }
 

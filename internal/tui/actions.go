@@ -11,7 +11,6 @@ import (
 	"github.com/usr1/owui/internal/api"
 	"github.com/usr1/owui/internal/chattree"
 	"github.com/usr1/owui/internal/socket"
-	"github.com/usr1/owui/internal/store"
 )
 
 func (m *App) submitLogin() tea.Cmd {
@@ -61,6 +60,7 @@ func (m *App) newChat() {
 	m.chatID = ""
 	m.chatTitle = ""
 	m.history = api.History{}
+	m.stickToBottom = true
 	m.genAssistant = ""
 	m.taskIDs = nil
 	m.status = ""
@@ -481,6 +481,7 @@ func (m *App) openChatID(id string) tea.Cmd {
 	}
 	m.filtering = false
 	m.filter = ""
+	m.stickToBottom = true
 	client := m.client
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -515,9 +516,8 @@ func (m *App) applyLoaded(msg loadedMsg) {
 		m.modelID = msg.rec.Chat.Models[0]
 	}
 	m.syncTranscript()
-	if m.index != nil && m.chatID != "" {
-		_ = m.index.Put(m.storeKey(), store.Entry{ID: m.chatID, Title: m.chatTitle, UpdatedAt: time.Now().Unix()})
-		m.chats = m.index.List(m.storeKey())
+	if m.chatID != "" {
+		m.retitleVisible(m.chatID, m.chatTitle)
 	}
 }
 
@@ -675,9 +675,8 @@ func (m *App) onEvent(ev socket.Event) tea.Cmd {
 		}
 		if data.Title != "" && (ev.ChatID == "" || ev.ChatID == m.chatID) {
 			m.chatTitle = data.Title
-			if m.index != nil && m.chatID != "" {
-				_ = m.index.Rename(m.storeKey(), m.chatID, data.Title)
-				m.chats = m.index.List(m.storeKey())
+			if m.chatID != "" {
+				m.retitleVisible(m.chatID, data.Title)
 			}
 		}
 	case "status":

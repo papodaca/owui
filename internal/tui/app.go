@@ -79,6 +79,7 @@ type App struct {
 	terminalID string
 
 	chats       []store.Entry
+	showAll     bool
 	filter      string
 	filtering   bool
 	selected    int
@@ -89,13 +90,14 @@ type App struct {
 	chatTitle string
 	history   api.History
 
-	generating   bool
-	genAssistant string
-	taskIDs      []string
-	pollSeq      int
-	genStart     time.Time
-	status       string
-	errText      string
+	generating    bool
+	stickToBottom bool
+	genAssistant  string
+	taskIDs       []string
+	pollSeq       int
+	genStart      time.Time
+	status        string
+	errText       string
 
 	input   textarea.Model
 	vp      viewport.Model
@@ -162,17 +164,19 @@ func newApp(cfg config.File, index *store.Index) App {
 			ImageGeneration: cfg.ImageGeneration,
 			Memory:          cfg.Memory,
 		},
-		toolIDs:    append([]string{}, cfg.ToolIDs...),
-		terminalID: cfg.TerminalID,
-		modelID:    cfg.Model,
-		selected:   0,
-		input:      newComposer(),
-		vp:         viewport.New(),
-		rename:     newSingleLine("title"),
-		urlIn:      newSingleLine("http://localhost:8080"),
-		keyIn:      newSingleLine("sk-..."),
-		emailIn:    newSingleLine("you@example.com"),
-		passIn:     newSingleLine(""),
+		toolIDs:       append([]string{}, cfg.ToolIDs...),
+		terminalID:    cfg.TerminalID,
+		modelID:       cfg.Model,
+		showAll:       cfg.ShowAll,
+		stickToBottom: true,
+		selected:      0,
+		input:         newComposer(),
+		vp:            viewport.New(),
+		rename:        newSingleLine("title"),
+		urlIn:         newSingleLine("http://localhost:8080"),
+		keyIn:         newSingleLine("sk-..."),
+		emailIn:       newSingleLine("you@example.com"),
+		passIn:        newSingleLine(""),
 	}
 	a.passIn.EchoMode = textinput.EchoPassword
 	a.urlIn.SetValue(cfg.URL)
@@ -187,7 +191,7 @@ func newApp(cfg config.File, index *store.Index) App {
 	} else if cfg.Token != "" {
 		a.authMode = authPassword
 	}
-	a.vp.MouseWheelEnabled = false
+	a.vp.MouseWheelEnabled = true
 	return a
 }
 
@@ -291,6 +295,11 @@ type chatsMsg struct {
 	err     error
 }
 
+type allChatsMsg struct {
+	entries []store.Entry
+	err     error
+}
+
 type sentMsg struct {
 	id        string
 	title     string
@@ -376,6 +385,9 @@ func (m *App) applyBoot(msg bootMsg) tea.Cmd {
 	m.ensureSocket()
 	var cmds []tea.Cmd
 	cmds = append(cmds, m.input.Focus(), waitEvent(m.sock.Events), m.refreshChats(), m.persist())
+	if m.showAll {
+		cmds = append(cmds, m.fetchAllChats())
+	}
 	return tea.Batch(cmds...)
 }
 
@@ -421,6 +433,107 @@ func (m *App) refreshChats() tea.Cmd {
 		}
 		return chatsMsg{entries: keep}
 	}
+}
+
+func (m *App) fetchAllChats() tea.Cmd {
+	if m.client == nil {
+		return nil
+	}
+	client := m.client
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		list, err := client.ListChats(ctx)
+		entries := make([]store.Entry, 0, len(list))
+		for _, chat := range list {
+			title := chat.Title
+			if title == "" {
+				title = "untitled"
+			}
+			entries = append(entries, store.Entry{
+				ID:        chat.ID,
+				Title:     title,
+				UpdatedAt: int64(chat.UpdatedAt),
+			})
+		}
+		return allChatsMsg{entries: entries, err: err}
+	}
+}
+
+func (m *App) toggleChatScope() tea.Cmd {
+	m.showAll = !m.showAll
+	m.cfg.ShowAll = m.showAll
+	m.filtering = false
+	m.filter = ""
+	m.selected = 0
+	if m.showAll {
+		m.status = "all chats"
+		return tea.Batch(m.fetchAllChats(), m.persist())
+	}
+	if m.index != nil {
+		m.chats = m.index.List(m.storeKey())
+	} else {
+		m.chats = nil
+	}
+	m.status = "this client"
+	return m.persist()
+}
+
+func (m *App) showClientList() {
+	if m.index == nil {
+		return
+	}
+	m.chats = m.index.List(m.storeKey())
+}
+
+func (m *App) upsertVisible(e store.Entry) {
+	if !m.showAll {
+		m.showClientList()
+		return
+	}
+	next := make([]store.Entry, 0, len(m.chats)+1)
+	next = append(next, e)
+	for _, old := range m.chats {
+		if old.ID != e.ID {
+			next = append(next, old)
+		}
+	}
+	m.chats = next
+}
+
+func (m *App) retitleVisible(id, title string) {
+	inIndex := false
+	if m.index != nil {
+		for _, e := range m.index.List(m.storeKey()) {
+			if e.ID == id {
+				inIndex = true
+				break
+			}
+		}
+		if inIndex {
+			_ = m.index.Rename(m.storeKey(), id, title)
+		}
+	}
+	if !m.showAll {
+		m.showClientList()
+		return
+	}
+	for i := range m.chats {
+		if m.chats[i].ID == id {
+			m.chats[i].Title = title
+			return
+		}
+	}
+}
+
+func (m *App) dropVisible(id string) {
+	next := make([]store.Entry, 0, len(m.chats))
+	for _, e := range m.chats {
+		if e.ID != id {
+			next = append(next, e)
+		}
+	}
+	m.chats = next
 }
 
 func (m *App) pickModel(id string) {
@@ -531,6 +644,7 @@ func (m *App) persist() tea.Cmd {
 	f.Memory = m.features.Memory
 	f.ToolIDs = append([]string{}, m.toolIDs...)
 	f.TerminalID = m.terminalID
+	f.ShowAll = m.showAll
 	if m.client != nil && m.client.BaseURL != "" {
 		f.URL = m.client.BaseURL
 	}
@@ -571,11 +685,34 @@ func (m *App) layout() {
 }
 
 func (m *App) syncTranscript() {
-	stick := m.vp.AtBottom()
 	m.vp.SetContent(m.transcript())
-	if stick {
+	if m.stickToBottom {
 		m.vp.GotoBottom()
 	}
+}
+
+// scrollTranscript moves the chat. Scrolling up stops pinning the view to the
+// newest line, so a later token does not yank it back down.
+func (m *App) scrollTranscript(msg tea.Msg) {
+	m.vp, _ = m.vp.Update(msg)
+	switch msg := msg.(type) {
+	case tea.MouseWheelMsg:
+		if msg.Button == tea.MouseWheelUp {
+			m.stickToBottom = false
+			return
+		}
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "pgup", "up", "ctrl+up", "ctrl+u":
+			m.stickToBottom = false
+			return
+		}
+		if msg.Code == tea.KeyPgUp || msg.Code == tea.KeyUp {
+			m.stickToBottom = false
+			return
+		}
+	}
+	m.stickToBottom = m.vp.AtBottom()
 }
 
 func (m *App) transcript() string {

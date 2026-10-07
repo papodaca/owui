@@ -109,6 +109,14 @@ type ChatBody struct {
 	CurrentID string    `json:"currentId,omitempty"`
 }
 
+// ChatSummary is one row from GET /api/v1/chats/.
+type ChatSummary struct {
+	ID        string   `json:"id"`
+	Title     string   `json:"title"`
+	UpdatedAt UnixTime `json:"updated_at"`
+	CreatedAt UnixTime `json:"created_at"`
+}
+
 // ChatRecord is a row from /api/v1/chats.
 type ChatRecord struct {
 	ID        string   `json:"id"`

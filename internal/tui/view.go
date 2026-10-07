@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func (m App) View() tea.View {
@@ -28,6 +29,7 @@ func (m App) View() tea.View {
 	}
 	v.AltScreen = true
 	v.WindowTitle = "owui"
+	v.MouseMode = tea.MouseModeCellMotion
 	return v
 }
 
@@ -114,7 +116,7 @@ func (m App) statusLine() string {
 	if m.status != "" {
 		return m.styles.status.Render(clip(m.status, w))
 	}
-	return m.styles.help.Render(clip("enter send  alt-enter newline  esc stop  ^n new  ^f find chat  ^k chats  ^p model  ^o features  ^t tools  ^g terminal", w))
+	return m.styles.help.Render(clip("enter send  alt-enter newline  esc stop  ^n new  ^f find  ^e all/client  ^k chats  ^p model  ^o features  ^t tools  ^g terminal", w))
 }
 
 func (m App) featureBar() string {
@@ -161,8 +163,10 @@ func (m App) sidebarView() string {
 	fmt.Fprintf(&b, "%s\n", m.styles.title.Render("chats"))
 	if m.filtering {
 		fmt.Fprintf(&b, "%s\n", m.styles.accent.Render(clip("/"+m.filter, sidebarWidth-3)))
+	} else if m.showAll {
+		fmt.Fprintf(&b, "%s\n", m.styles.dim.Render("all chats  ^e"))
 	} else {
-		fmt.Fprintf(&b, "%s\n", m.styles.dim.Render("this client"))
+		fmt.Fprintf(&b, "%s\n", m.styles.dim.Render("this client  ^e"))
 	}
 	items := m.visibleChats()
 	limit := m.height - 4
@@ -190,7 +194,7 @@ func (m App) sidebarView() string {
 		if title == "" {
 			title = "untitled"
 		}
-		line := clip(title, sidebarWidth-3)
+		line := clip(title, sidebarWidth-1)
 		switch {
 		case idx == m.selected && m.focus == focusSidebar:
 			line = m.styles.sel.Render(line)
@@ -241,11 +245,14 @@ func (m App) helpText(w int) string {
 		"ctrl+n         new chat",
 		"ctrl+k         chats sidebar",
 		"ctrl+f         fuzzy find a chat",
+		"ctrl+e         this client or all chats",
 		"ctrl+p         model",
 		"ctrl+o         web, code, image, memory",
 		"ctrl+t         tools and MCP servers",
 		"ctrl+g         terminal",
 		"tab            move focus",
+		"pgup/pgdown   scroll the chat",
+		"mouse wheel   scroll the chat",
 		"",
 		"commands",
 		"/web /code /image /memory     toggle, or add on/off",
@@ -345,12 +352,10 @@ func clipLines(lines []string, w int) string {
 }
 
 func clip(s string, n int) string {
-	r := []rune(s)
-	if n < 1 || len(r) <= n {
-		return s
+	if n < 1 {
+		return ""
 	}
-	if n == 1 {
-		return "…"
-	}
-	return string(r[:n-1]) + "…"
+	// Truncate by terminal columns. Emoji and other wide characters are two
+	// columns, so a rune count lets those titles draw through the sidebar border.
+	return ansi.Truncate(s, n, "…")
 }

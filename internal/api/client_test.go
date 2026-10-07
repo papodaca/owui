@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -87,6 +88,25 @@ func TestCreateAndComplete(t *testing.T) {
 	feats, _ := gotComplete["features"].(map[string]any)
 	if feats["web_search"] != true {
 		t.Fatalf("features = %#v", feats)
+	}
+}
+
+func TestListChats(t *testing.T) {
+	var path string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path = r.URL.RequestURI()
+		_, _ = w.Write([]byte(`[{"id":"c1","title":"Hello","updated_at":10}]`))
+	}))
+	defer srv.Close()
+	list, err := New(srv.URL, "k").ListChats(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].ID != "c1" || list[0].Title != "Hello" {
+		t.Fatalf("%#v", list)
+	}
+	if !strings.Contains(path, "include_pinned=true") || !strings.Contains(path, "include_folders=true") {
+		t.Fatalf("path = %s", path)
 	}
 }
 

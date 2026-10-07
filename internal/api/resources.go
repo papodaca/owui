@@ -137,6 +137,17 @@ func (c *Client) Terminals(ctx context.Context) ([]Terminal, error) {
 	return out, nil
 }
 
+// ListChats returns the signed-in user's chats, including pinned ones and
+// chats that live in folders. Archived chats stay out, same as the web sidebar.
+func (c *Client) ListChats(ctx context.Context) ([]ChatSummary, error) {
+	var list []ChatSummary
+	err := c.do(ctx, http.MethodGet, "/api/v1/chats/?include_pinned=true&include_folders=true", nil, &list)
+	if list == nil {
+		list = []ChatSummary{}
+	}
+	return list, err
+}
+
 func (c *Client) CreateChat(ctx context.Context, chat any) (ChatRecord, error) {
 	var rec ChatRecord
 	err := c.do(ctx, http.MethodPost, "/api/v1/chats/new", map[string]any{"chat": chat}, &rec)

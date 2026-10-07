@@ -23,6 +23,12 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case quitResetMsg:
 		m.quitArmed = false
 		return m, nil
+	case tea.MouseWheelMsg:
+		if m.phase != phaseMain || m.overlay != overlayNone {
+			return m, nil
+		}
+		m.scrollTranscript(msg)
+		return m, nil
 	case tea.PasteMsg:
 		return m, m.paste(msg)
 	case tea.KeyPressMsg:
@@ -61,10 +67,22 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loginErr = ""
 		return m, m.startSplash()
 	case chatsMsg:
-		m.chats = msg.entries
-		m.clampSelected()
+		if !m.showAll {
+			m.chats = msg.entries
+			m.clampSelected()
+		}
 		if msg.err != nil && m.errText == "" {
 			m.errText = msg.err.Error()
+		}
+		return m, nil
+	case allChatsMsg:
+		if m.showAll {
+			if msg.err != nil {
+				m.errText = msg.err.Error()
+			} else {
+				m.chats = msg.entries
+				m.clampSelected()
+			}
 		}
 		return m, nil
 	case sentMsg:
@@ -95,9 +113,7 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.history.CurrentID = ""
 			m.syncTranscript()
 		}
-		if m.index != nil {
-			m.chats = m.index.List(m.storeKey())
-		}
+		m.dropVisible(msg.id)
 		m.clampSelected()
 		return m, nil
 	case renamedMsg:
@@ -108,9 +124,7 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.id == m.chatID {
 			m.chatTitle = msg.title
 		}
-		if m.index != nil {
-			m.chats = m.index.List(m.storeKey())
-		}
+		m.retitleVisible(msg.id, msg.title)
 		return m, nil
 	case savedMsg:
 		if msg.err != nil {
@@ -154,7 +168,7 @@ func (m *App) applySent(msg sentMsg) tea.Cmd {
 	m.status = "working"
 	if m.index != nil {
 		_ = m.index.Put(m.storeKey(), store.Entry{ID: m.chatID, Title: m.chatTitle, UpdatedAt: time.Now().Unix()})
-		m.chats = m.index.List(m.storeKey())
+		m.upsertVisible(store.Entry{ID: m.chatID, Title: m.chatTitle, UpdatedAt: time.Now().Unix()})
 	}
 	return m.schedulePoll()
 }
@@ -297,6 +311,11 @@ func (m *App) updateMain(msg tea.KeyPressMsg) tea.Cmd {
 	case "ctrl+f":
 		m.openChatSearch()
 		return nil
+	case "ctrl+e":
+		return m.toggleChatScope()
+	case "pgup", "pgdown", "ctrl+up", "ctrl+down":
+		m.scrollTranscript(msg)
+		return nil
 	case "esc":
 		if m.generating {
 			return m.stop()
@@ -321,11 +340,37 @@ func (m *App) updateMain(msg tea.KeyPressMsg) tea.Cmd {
 		return cmd
 	default:
 		if msg.String() == "enter" {
+			m.stickToBottom = true
 			return m.send()
+		}
+		if m.promptScroll(msg) {
+			m.scrollTranscript(msg)
+			return nil
 		}
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
 		return cmd
+	}
+}
+
+// promptScroll reports whether this key should move the transcript instead of
+// the cursor. The prompt keeps its own line motion until the cursor is on the
+// first or last line.
+func (m App) promptScroll(msg tea.KeyPressMsg) bool {
+	switch msg.Code {
+	case tea.KeyPgUp, tea.KeyPgDown:
+		return true
+	}
+	switch msg.String() {
+	case "pgup", "pgdown", "ctrl+up", "ctrl+down", "ctrl+u", "ctrl+d":
+		return true
+	case "up":
+		return m.input.Line() == 0
+	case "down":
+		lines := strings.Count(m.input.Value(), "\n")
+		return m.input.Line() >= lines && !m.vp.AtBottom()
+	default:
+		return false
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/usr1/owui/internal/config"
 )
@@ -79,6 +80,55 @@ func TestQuitTakesTwoCtrlC(t *testing.T) {
 	next, _ = got.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
 	if next.(App).quitArmed {
 		t.Fatal("another key should cancel the quit")
+	}
+}
+
+func TestPageUpScrollsTranscript(t *testing.T) {
+	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
+	app.phase = phaseMain
+	app.vp.SetWidth(20)
+	app.vp.SetHeight(4)
+	app.vp.SetContent(strings.Repeat("line\n", 40))
+	app.vp.GotoBottom()
+	before := app.vp.YOffset()
+	if before == 0 {
+		t.Fatal("fixture is not taller than the window")
+	}
+	next, _ := app.Update(tea.KeyPressMsg{Code: tea.KeyPgUp})
+	scrolled := next.(App)
+	if scrolled.vp.YOffset() >= before {
+		t.Fatalf("offset stayed at %d", before)
+	}
+}
+
+func TestWheelScrollsWhilePromptFocused(t *testing.T) {
+	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
+	app.phase = phaseMain
+	app.focus = focusComposer
+	app.vp.SetWidth(20)
+	app.vp.SetHeight(4)
+	app.vp.SetContent(strings.Repeat("line\n", 40))
+	app.vp.GotoBottom()
+	before := app.vp.YOffset()
+	next, _ := app.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
+	got := next.(App)
+	scrolled := got.vp.YOffset()
+	if scrolled >= before {
+		t.Fatalf("wheel did not scroll, offset %d", before)
+	}
+	if got.stickToBottom {
+		t.Fatal("view stayed pinned after scrolling up")
+	}
+}
+
+func TestClipUsesDisplayWidth(t *testing.T) {
+	got := clip(strings.Repeat("🍦", 20)+"Paying Amended Tax", 12)
+	if w := ansi.StringWidth(got); w > 12 {
+		t.Fatalf("width %d, title %q", w, got)
+	}
+	plain := clip(strings.Repeat("a", 40), 10)
+	if w := ansi.StringWidth(plain); w > 10 {
+		t.Fatalf("width %d, title %q", w, plain)
 	}
 }
 
