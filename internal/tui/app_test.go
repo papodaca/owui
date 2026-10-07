@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/usr1/owui/internal/api"
 	"github.com/usr1/owui/internal/config"
 	"github.com/usr1/owui/internal/store"
 )
@@ -175,6 +176,21 @@ func TestWheelScrollsSidebarWhenFocused(t *testing.T) {
 	}
 	if got.vp.YOffset() != chatAt {
 		t.Fatal("wheel moved the transcript while the sidebar was focused")
+	}
+}
+
+func TestSpaceTogglesTool(t *testing.T) {
+	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
+	app.phase = phaseMain
+	app.tools = []api.Tool{{ID: "alpha", Name: "Alpha"}}
+	app.openTools()
+	next, _ := app.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
+	got := next.(App)
+	if got.pick.filter != "" {
+		t.Fatalf("space started a filter %q", got.pick.filter)
+	}
+	if !got.pick.multi["alpha"] {
+		t.Fatal("space did not enable the tool")
 	}
 }
 

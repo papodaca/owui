@@ -526,7 +526,7 @@ func (m *App) updateOverlay(msg tea.KeyPressMsg) tea.Cmd {
 			if m.featureCursor < 3 {
 				m.featureCursor++
 			}
-		case " ", "enter":
+		case " ", "space", "enter":
 			return m.toggleFeatureCursor()
 		}
 		return nil
@@ -557,7 +557,7 @@ func (m *App) updatePicker(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		m.pick.cursor = 0
 		return nil
-	case " ":
+	case " ", "space":
 		if m.overlay == overlayTools {
 			items := m.pick.visible()
 			if m.pick.cursor >= 0 && m.pick.cursor < len(items) {
