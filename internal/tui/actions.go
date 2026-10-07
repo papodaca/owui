@@ -523,7 +523,7 @@ func (m *App) applyLoaded(msg loadedMsg) tea.Cmd {
 		m.status = ""
 		m.pollSeq++
 		if msg.chime {
-			cmd = doneChime(m.chatTitle, replySnippet(m.history))
+			cmd = doneChime(m.chatTitle, replySnippet(m.history), m.termFocused)
 		}
 	}
 	if len(msg.rec.Chat.Models) > 0 && msg.why == "open" {
@@ -636,7 +636,7 @@ func (m *App) finish() tea.Cmd {
 	if m.client == nil || m.chatID == "" {
 		m.generating = false
 		if chime {
-			return doneChime(m.chatTitle, replySnippet(m.history))
+			return doneChime(m.chatTitle, replySnippet(m.history), m.termFocused)
 		}
 		return nil
 	}

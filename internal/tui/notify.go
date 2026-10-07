@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"strings"
@@ -16,7 +17,10 @@ import (
 // doneChime marks a finished reply. Inside Herdr the toast title is the chat
 // name and the body is the start of the reply, using the done sound from the
 // user's sound pack. Anywhere else it is the terminal bell.
-func doneChime(title, reply string) tea.Cmd {
+func doneChime(title, reply string, termFocused bool) tea.Cmd {
+	if !shouldChime(termFocused) {
+		return nil
+	}
 	if !inHerdr() {
 		return tea.Printf("\a")
 	}
@@ -43,6 +47,40 @@ func herdrNotifyArgs(title, reply string) []string {
 }
 
 type bellMsg struct{}
+
+// shouldChime is false while this terminal window is focused. A blur from
+// the terminal (DEC 1004, which Herdr forwards) turns it back on. Inside
+// Herdr, another focused pane also counts as away, even if the Herdr window
+// itself still has focus. If the pane query fails, the window focus stands.
+func shouldChime(termFocused bool) bool {
+	if !termFocused {
+		return true
+	}
+	if inHerdr() && !herdrPaneFocused() {
+		return true
+	}
+	return false
+}
+
+func herdrPaneFocused() bool {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "herdr", "pane", "current").Output()
+	if err != nil {
+		return true
+	}
+	var wrap struct {
+		Result struct {
+			Pane struct {
+				Focused bool `json:"focused"`
+			} `json:"pane"`
+		} `json:"result"`
+	}
+	if json.Unmarshal(out, &wrap) != nil {
+		return true
+	}
+	return wrap.Result.Pane.Focused
+}
 
 func inHerdr() bool {
 	return os.Getenv("HERDR_ENV") != "" || os.Getenv("HERDR_PANE_ID") != ""

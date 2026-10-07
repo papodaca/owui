@@ -33,6 +33,7 @@ func TestDoneReplyChimes(t *testing.T) {
 	t.Setenv("HERDR_ENV", "")
 	t.Setenv("HERDR_PANE_ID", "")
 	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
+	app.termFocused = false
 	app.generating = true
 	cmd := app.applyLoaded(loadedMsg{
 		why:   "done",
@@ -48,6 +49,31 @@ func TestDoneReplyChimes(t *testing.T) {
 	quiet := app.applyLoaded(loadedMsg{why: "done", rec: api.ChatRecord{ID: "c"}})
 	if quiet != nil {
 		t.Fatal("a stopped reply chimed")
+	}
+}
+
+func TestFocusedWindowSkipsChime(t *testing.T) {
+	t.Setenv("HERDR_ENV", "")
+	t.Setenv("HERDR_PANE_ID", "")
+	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
+	app.generating = true
+	app.termFocused = true
+	cmd := app.applyLoaded(loadedMsg{
+		why:   "done",
+		chime: true,
+		rec:   api.ChatRecord{ID: "c", Title: "tables"},
+	})
+	if cmd != nil {
+		t.Fatal("chimed while the window was focused")
+	}
+	app.termFocused = false
+	cmd = app.applyLoaded(loadedMsg{
+		why:   "done",
+		chime: true,
+		rec:   api.ChatRecord{ID: "c", Title: "tables"},
+	})
+	if cmd == nil {
+		t.Fatal("stayed silent after the window blurred")
 	}
 }
 

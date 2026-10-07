@@ -94,6 +94,7 @@ type App struct {
 
 	generating    bool
 	stickToBottom bool
+	termFocused   bool
 	genAssistant  string
 	pendingChime  bool
 	taskIDs       []string
@@ -177,6 +178,7 @@ func newApp(cfg config.File, index *store.Index) App {
 		modelID:       cfg.Model,
 		showAll:       cfg.ShowAll,
 		stickToBottom: true,
+		termFocused:   true,
 		selected:      0,
 		input:         newComposer(),
 		vp:            viewport.New(),

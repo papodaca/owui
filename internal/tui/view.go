@@ -30,6 +30,7 @@ func (m App) View() tea.View {
 	v.AltScreen = true
 	v.WindowTitle = "owui"
 	v.MouseMode = tea.MouseModeCellMotion
+	v.ReportFocus = true
 	return v
 }
 
@@ -253,8 +254,8 @@ func (m App) helpText(w int) string {
 		"/terminal off",
 		"/new /help",
 		"",
-		"A finished reply rings the terminal bell.",
-		"Under Herdr it names the chat and plays the done sound.",
+		"A finished reply rings the bell, or names the chat under Herdr.",
+		"It stays quiet while this window has focus.",
 		"",
 		"Chats started here are stored on the server.",
 		"The sidebar lists only those. The web UI shows them too.",

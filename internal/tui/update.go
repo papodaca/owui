@@ -13,6 +13,12 @@ import (
 
 func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.FocusMsg:
+		m.termFocused = true
+		return m, nil
+	case tea.BlurMsg:
+		m.termFocused = false
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
