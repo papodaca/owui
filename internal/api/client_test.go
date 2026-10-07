@@ -12,6 +12,7 @@ import (
 
 func TestCreateAndComplete(t *testing.T) {
 	var gotComplete map[string]any
+	var gotRaw string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer sk-test" {
 			t.Errorf("auth = %s", r.Header.Get("Authorization"))
@@ -31,6 +32,7 @@ func TestCreateAndComplete(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(ChatRecord{ID: "chat-1", Chat: wrap.Chat})
 		case "/api/chat/completions":
+			gotRaw = string(body)
 			if err := json.Unmarshal(body, &gotComplete); err != nil {
 				t.Fatal(err)
 			}
@@ -61,14 +63,16 @@ func TestCreateAndComplete(t *testing.T) {
 	if rec.ID != "chat-1" {
 		t.Fatalf("id = %s", rec.ID)
 	}
+	user := Message{ID: "u", Role: "user", Content: "Hi", ChildrenIDs: IDList{"a"}}
 	ack, err := c.Complete(context.Background(), CompletionRequest{
-		Model:     "m",
-		Messages:  []CompletionMessage{{Role: "user", Content: "Hi"}},
-		Stream:    true,
-		ChatID:    rec.ID,
-		ID:        "a",
-		SessionID: "sid",
-		Features:  Features{WebSearch: true},
+		Model:       "m",
+		Messages:    []CompletionMessage{{Role: "user", Content: "Hi"}},
+		Stream:      true,
+		ChatID:      rec.ID,
+		ID:          "a",
+		SessionID:   "sid",
+		Features:    Features{WebSearch: true},
+		UserMessage: &user,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -84,6 +88,13 @@ func TestCreateAndComplete(t *testing.T) {
 	}
 	if gotComplete["chat_id"] != "chat-1" || gotComplete["session_id"] != "sid" {
 		t.Fatalf("body = %#v", gotComplete)
+	}
+	if !strings.Contains(gotRaw, `"parent_id":null`) {
+		t.Fatalf("parent_id was omitted: %s", gotRaw)
+	}
+	userMsg, _ := gotComplete["user_message"].(map[string]any)
+	if userMsg["id"] != "u" || userMsg["content"] != "Hi" {
+		t.Fatalf("user_message = %#v", gotComplete["user_message"])
 	}
 	feats, _ := gotComplete["features"].(map[string]any)
 	if feats["web_search"] != true {

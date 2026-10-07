@@ -237,6 +237,10 @@ type CompletionRequest struct {
 	TerminalID      string              `json:"terminal_id,omitempty"`
 	BackgroundTasks BackgroundTasks     `json:"background_tasks"`
 	Variables       map[string]string   `json:"variables,omitempty"`
+	// ParentID is null for the first message and the previous assistant id after that.
+	// Omitting it makes the server save the reply with no parent, which drops the user message.
+	ParentID    *string  `json:"parent_id"`
+	UserMessage *Message `json:"user_message,omitempty"`
 }
 
 // CompletionAck is what /api/chat/completions returns when session_id is set.

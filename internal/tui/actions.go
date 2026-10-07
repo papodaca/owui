@@ -94,11 +94,11 @@ func (m *App) send() tea.Cmd {
 	now := time.Now().Unix()
 	modelName := m.modelName()
 	var (
-		turn    chattree.Turn
-		created bool
-		body    any
-		patch   map[string]any
-		chatID  string
+		turn     chattree.Turn
+		created  bool
+		body     any
+		parentID *string
+		chatID   string
 	)
 	if m.chatID == "" {
 		created = true
@@ -110,7 +110,11 @@ func (m *App) send() tea.Cmd {
 	} else {
 		chatID = m.chatID
 		prev := m.history.CurrentID
-		turn, patch = chattree.AppendPatch(prev, m.modelID, modelName, text, now)
+		// The completion request saves this turn. Do not PATCH history here:
+		// the server replaces a message object wholesale, so a partial update
+		// would wipe the previous reply.
+		turn, _ = chattree.AppendPatch(prev, m.modelID, modelName, text, now)
+		parentID = &prev
 		if msg, ok := m.history.Messages[prev]; ok {
 			msg.ChildrenIDs = append(api.IDList{}, msg.ChildrenIDs...)
 			msg.ChildrenIDs = append(msg.ChildrenIDs, turn.UserID)
@@ -123,6 +127,7 @@ func (m *App) send() tea.Cmd {
 		m.history.Messages[turn.AssistantID] = turn.Assistant
 		m.history.CurrentID = turn.AssistantID
 	}
+	userMessage := turn.User
 	m.generating = true
 	m.genAssistant = turn.AssistantID
 	m.genStart = time.Now()
@@ -145,7 +150,9 @@ func (m *App) send() tea.Cmd {
 			TagsGeneration:     false,
 			FollowUpGeneration: false,
 		},
-		Variables: variables(),
+		Variables:   variables(),
+		ParentID:    parentID,
+		UserMessage: &userMessage,
 	}
 	if len(req.ToolIDs) == 0 {
 		req.ToolIDs = nil
@@ -164,8 +171,6 @@ func (m *App) send() tea.Cmd {
 			if id == "" {
 				return sentMsg{created: true, prompt: text, assistant: turn.AssistantID, err: errEmptyID}
 			}
-		} else if _, err := client.UpdateChat(ctx, id, patch); err != nil {
-			return sentMsg{id: id, created: false, prompt: text, assistant: turn.AssistantID, err: err}
 		}
 		req.ChatID = id
 		ack, err := client.Complete(ctx, req)
