@@ -179,6 +179,25 @@ func TestWheelScrollsSidebarWhenFocused(t *testing.T) {
 	}
 }
 
+func TestAssistantLabelUsesModelName(t *testing.T) {
+	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
+	app.models = []api.Model{{ID: "cur.grok-4.7", Name: "Grok 4.7"}}
+	app.history = api.History{
+		CurrentID: "a",
+		Messages: map[string]api.Message{
+			"u": {ID: "u", Role: "user", Content: "hi", ChildrenIDs: api.IDList{"a"}},
+			"a": {ID: "a", Role: "assistant", Content: "ok", ParentID: "u", Model: "cur.grok-4.7", ChildrenIDs: api.IDList{}},
+		},
+	}
+	out := app.transcript()
+	if strings.Contains(out, "assistant") {
+		t.Fatalf("fell back to assistant:\n%s", out)
+	}
+	if !strings.Contains(out, "Grok 4.7") {
+		t.Fatalf("transcript = %q", out)
+	}
+}
+
 func TestSpinnerShowsWhileGenerating(t *testing.T) {
 	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
 	app.generating = true

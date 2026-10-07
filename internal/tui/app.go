@@ -783,13 +783,13 @@ func (m *App) transcript() string {
 	}
 	var b strings.Builder
 	for _, msg := range chain {
-		name := msg.Role
+		name := "assistant"
 		style := m.styles.assist
 		if msg.Role == "user" {
 			name = "you"
 			style = m.styles.user
-		} else if msg.ModelName != "" {
-			name = msg.ModelName
+		} else if label := m.assistantLabel(msg); label != "" {
+			name = label
 		}
 		fmt.Fprintf(&b, "%s\n", style.Render(name))
 		body := m.renderMarkdown(msg.ID, msg.Content.String())
@@ -811,6 +811,19 @@ func (m *App) transcript() string {
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+func (m App) assistantLabel(msg api.Message) string {
+	if msg.Model != "" {
+		if known := m.modelByID(msg.Model); known.Name != "" {
+			return known.Name
+		}
+		return msg.Model
+	}
+	if msg.ModelName != "" {
+		return msg.ModelName
+	}
+	return ""
 }
 
 func (m *App) renderMarkdown(id, body string) string {
