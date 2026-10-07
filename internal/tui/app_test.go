@@ -1,0 +1,110 @@
+package tui
+
+import (
+	"strings"
+	"testing"
+
+	tea "charm.land/bubbletea/v2"
+
+	"github.com/usr1/owui/internal/config"
+)
+
+func TestLoginRenders(t *testing.T) {
+	app := newApp(config.File{URL: "http://127.0.0.1:8080", Path: t.TempDir() + "/config.toml"}, nil)
+	next, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	view := next.(App).View()
+	if !strings.Contains(view.Content, "Open WebUI") {
+		t.Fatalf("view = %q", view.Content)
+	}
+	if !view.AltScreen {
+		t.Fatal("expected the alternate screen")
+	}
+}
+
+func TestSplashInsteadOfLogin(t *testing.T) {
+	app := newApp(config.File{
+		URL:    "http://127.0.0.1:8080",
+		APIKey: "sk-test",
+		Path:   t.TempDir() + "/config.toml",
+	}, nil)
+	if app.phase != phaseSplash {
+		t.Fatalf("phase = %d", app.phase)
+	}
+	next, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 32})
+	body := next.(App).View().Content
+	if !strings.Contains(body, "connecting") {
+		t.Fatal("splash missing connecting")
+	}
+	if strings.Contains(body, "api key") {
+		t.Fatal("login form shown during connect")
+	}
+}
+
+func TestMarkdownRendersTable(t *testing.T) {
+	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
+	app.vp.SetWidth(72)
+	src := "#### Closest races\n\n| State | Seat |\n| --- | --- |\n| **Maine** | toss-up |\n\nSee the [Cook Report](https://www.cookpolitical.com/).\n"
+	out := app.renderMarkdown("m1", src)
+	if strings.Contains(out, "| --- |") || strings.Contains(out, "####") || strings.Contains(out, "**Maine**") {
+		t.Fatalf("markdown left raw:\n%s", out)
+	}
+	if !strings.Contains(out, "Maine") || !strings.Contains(out, "toss-up") || !strings.Contains(out, "Cook Report") {
+		t.Fatalf("missing text:\n%s", out)
+	}
+}
+
+func TestQuitTakesTwoCtrlC(t *testing.T) {
+	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
+	key := tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
+	if key.String() != "ctrl+c" {
+		t.Fatalf("key = %q", key.String())
+	}
+	next, cmd := app.Update(key)
+	got := next.(App)
+	if !got.quitArmed {
+		t.Fatal("first ctrl+c should arm quit")
+	}
+	if cmd == nil {
+		t.Fatal("expected a reset timer")
+	}
+	next, cmd = got.Update(key)
+	if cmd == nil {
+		t.Fatal("expected quit")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatal("second ctrl+c should quit")
+	}
+	got = next.(App)
+	got.quitArmed = true
+	next, _ = got.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
+	if next.(App).quitArmed {
+		t.Fatal("another key should cancel the quit")
+	}
+}
+
+func TestPasteAPIKey(t *testing.T) {
+	app := newApp(config.File{URL: "http://127.0.0.1:8080", Path: t.TempDir() + "/config.toml"}, nil)
+	app.authMode = authAPIKey
+	app.loginField = 1
+	app.keyIn.Focus()
+	next, _ := app.Update(tea.PasteMsg{Content: " sk-test-key\n"})
+	if got := next.(App).keyIn.Value(); got != "sk-test-key" {
+		t.Fatalf("key = %q", got)
+	}
+}
+
+func TestCodeInterpreterClearsTerminal(t *testing.T) {
+	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
+	app.terminalID = "open-terminal"
+	app.modelID = "m"
+	handled, _ := app.slash("/code on")
+	if !handled {
+		t.Fatal("expected /code to be handled")
+	}
+	if app.terminalID != "" {
+		t.Fatal("terminal still set")
+	}
+	if !app.features.CodeInterpreter {
+		t.Fatal("code interpreter not on")
+	}
+}
