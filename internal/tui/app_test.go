@@ -179,6 +179,22 @@ func TestWheelScrollsSidebarWhenFocused(t *testing.T) {
 	}
 }
 
+func TestSpinnerShowsWhileGenerating(t *testing.T) {
+	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
+	app.generating = true
+	app.genAssistant = "a"
+	app.history = api.History{
+		CurrentID: "a",
+		Messages: map[string]api.Message{
+			"u": {ID: "u", Role: "user", Content: "hi", ChildrenIDs: api.IDList{"a"}},
+			"a": {ID: "a", Role: "assistant", ParentID: "u", ChildrenIDs: api.IDList{}},
+		},
+	}
+	if !strings.Contains(app.transcript(), "⠋") {
+		t.Fatalf("transcript = %q", app.transcript())
+	}
+}
+
 func TestSpaceTogglesTool(t *testing.T) {
 	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
 	app.phase = phaseMain

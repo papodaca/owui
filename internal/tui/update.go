@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/usr1/owui/internal/socket"
@@ -20,6 +21,14 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.syncTranscript()
 		}
 		return m, nil
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spin, cmd = m.spin.Update(msg)
+		if !m.generating {
+			return m, nil
+		}
+		m.syncTranscript()
+		return m, cmd
 	case quitResetMsg:
 		m.quitArmed = false
 		return m, nil

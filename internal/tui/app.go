@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
@@ -15,6 +16,7 @@ import (
 	"charm.land/glamour/v2"
 	"charm.land/glamour/v2/ansi"
 	gstyles "charm.land/glamour/v2/styles"
+	"charm.land/lipgloss/v2"
 	"github.com/google/uuid"
 
 	"github.com/usr1/owui/internal/api"
@@ -101,6 +103,7 @@ type App struct {
 
 	input   textarea.Model
 	vp      viewport.Model
+	spin    spinner.Model
 	md      *glamour.TermRenderer
 	mdWidth int
 	mdCache map[string]mdEntry
@@ -192,6 +195,8 @@ func newApp(cfg config.File, index *store.Index) App {
 		a.authMode = authPassword
 	}
 	a.vp.MouseWheelEnabled = true
+	a.spin = spinner.New(spinner.WithSpinner(spinner.MiniDot))
+	a.spin.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
 	return a
 }
 
@@ -787,11 +792,17 @@ func (m *App) transcript() string {
 			name = msg.ModelName
 		}
 		fmt.Fprintf(&b, "%s\n", style.Render(name))
-		body := msg.Content.String()
-		if body == "" && msg.ID == m.genAssistant && m.generating {
-			body = "…"
+		body := m.renderMarkdown(msg.ID, msg.Content.String())
+		working := m.generating && msg.ID == m.genAssistant
+		if working {
+			mark := m.spin.View()
+			if body == "" {
+				body = mark
+			} else {
+				body += "\n" + mark
+			}
 		}
-		b.WriteString(m.renderMarkdown(msg.ID, body))
+		b.WriteString(body)
 		b.WriteString("\n")
 		if src := sourceBlock(msg.Sources); src != "" {
 			b.WriteString(m.styles.dim.Render(src))

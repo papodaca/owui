@@ -158,7 +158,7 @@ func (m *App) send() tea.Cmd {
 		req.ToolIDs = nil
 	}
 	client := m.client
-	return func() tea.Msg {
+	work := func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
 		id := chatID
@@ -184,6 +184,11 @@ func (m *App) send() tea.Cmd {
 			err:       err,
 		}
 	}
+	return tea.Batch(work, m.spinTick())
+}
+
+func (m App) spinTick() tea.Cmd {
+	return func() tea.Msg { return m.spin.Tick() }
 }
 
 type stringError string
