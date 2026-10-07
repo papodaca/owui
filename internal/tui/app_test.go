@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -176,6 +177,73 @@ func TestWheelScrollsSidebarWhenFocused(t *testing.T) {
 	}
 	if got.vp.YOffset() != chatAt {
 		t.Fatal("wheel moved the transcript while the sidebar was focused")
+	}
+}
+
+func TestTranscriptListsOutputToolCalls(t *testing.T) {
+	output := `[
+		{"type":"message","content":[{"type":"output_text","text":"I'll look it up."}]},
+		{"type":"function_call","name":"tool_web_search_post","status":"completed","call_id":"a"},
+		{"type":"function_call","name":"tool_web_search_post","status":"completed","call_id":"b"},
+		{"type":"function_call_output","call_id":"a","output":[{"type":"input_text","text":"secret result"}]},
+		{"type":"function_call","name":"tool_web_fetch_post","status":"completed","call_id":"c"},
+		{"type":"message","content":[{"type":"output_text","text":"Rick and Morty was not canceled."}]}
+	]`
+	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
+	app.history = api.History{
+		CurrentID: "a",
+		Messages: map[string]api.Message{
+			"u": {ID: "u", Role: "user", Content: "hi", ChildrenIDs: api.IDList{"a"}},
+			"a": {
+				ID: "a", Role: "assistant", ParentID: "u", ChildrenIDs: api.IDList{},
+				Content: "I'll look it up.\n\nRick and Morty was not canceled.",
+				Output:  json.RawMessage(output),
+			},
+		},
+	}
+	plain := ansi.Strip(app.transcript())
+	search := strings.Count(plain, "tool_web_search_post")
+	if search != 2 || !strings.Contains(plain, "tool_web_fetch_post") {
+		t.Fatalf("calls:\n%s", plain)
+	}
+	if strings.Contains(plain, "secret result") {
+		t.Fatalf("result leaked:\n%s", plain)
+	}
+	look := strings.Index(plain, "I'll look it up")
+	call := strings.Index(plain, "tool_web_search_post")
+	answer := strings.Index(plain, "not canceled")
+	if look < 0 || call < look || answer < call {
+		t.Fatalf("order:\n%s", plain)
+	}
+}
+
+func TestTranscriptListsToolCalls(t *testing.T) {
+	content := "Before the search.\n\n" +
+		"<details type=\"tool_calls\" done=\"true\" id=\"c1\" name=\"tool_web_search_post\" arguments=\"{&#34;q&#34;:&#34;x&#34;}\">\n" +
+		"<summary>Tool Executed</summary>\n{\"hits\":12}\n</details>\n\n" +
+		"After the search.\n\n" +
+		"<details type=\"tool_calls\" done=\"false\" name=\"tool_fetch\" arguments=\"{}\">\npartial"
+	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
+	app.history = api.History{
+		CurrentID: "a",
+		Messages: map[string]api.Message{
+			"u": {ID: "u", Role: "user", Content: "hi", ChildrenIDs: api.IDList{"a"}},
+			"a": {ID: "a", Role: "assistant", Content: api.Content(content), ParentID: "u", ChildrenIDs: api.IDList{}},
+		},
+	}
+	out := app.transcript()
+	plain := ansi.Strip(out)
+	if !strings.Contains(plain, "tool_web_search_post") || !strings.Contains(plain, "calling tool_fetch") {
+		t.Fatalf("tools missing:\n%s", plain)
+	}
+	if strings.Contains(plain, "hits") || strings.Contains(plain, "<details") || strings.Contains(plain, "Tool Executed") || strings.Contains(plain, "partial") {
+		t.Fatalf("tool result leaked:\n%s", plain)
+	}
+	before := strings.Index(plain, "Before the search")
+	call := strings.Index(plain, "tool_web_search_post")
+	after := strings.Index(plain, "After the search")
+	if before < 0 || call < before || after < call {
+		t.Fatalf("order:\n%s", plain)
 	}
 }
 

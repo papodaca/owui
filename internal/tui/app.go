@@ -856,19 +856,43 @@ func (m *App) transcript() string {
 		}
 		w.curID = -1
 		fmt.Fprintf(&w, "%s\n", style.Render(name))
-		body, bodyIDs := m.renderMapped(msg.ID, msg.Content.String())
+		parts := messageParts(msg.Content.String(), msg.Output)
+		wrote := false
+		for _, part := range parts {
+			if part.tool != "" {
+				if wrote {
+					w.curID = -1
+					w.WriteString("\n")
+				}
+				label := part.tool
+				if part.running {
+					label = "calling " + part.tool
+				}
+				w.curID = -1
+				w.WriteString(m.styles.accent.Render(label))
+				wrote = true
+				continue
+			}
+			body, bodyIDs := m.renderMapped(msg.ID, part.text)
+			if body == "" {
+				continue
+			}
+			if wrote {
+				w.curID = -1
+				w.WriteString("\n")
+			}
+			w.writeMapped(body, bodyIDs)
+			wrote = true
+		}
 		working := m.generating && msg.ID == m.genAssistant
 		if working {
-			mark := m.spin.View()
-			if body == "" {
-				body = mark
-				bodyIDs = []int{-1}
-			} else {
-				body += "\n" + mark
-				bodyIDs = append(bodyIDs, -1)
+			if wrote {
+				w.curID = -1
+				w.WriteString("\n")
 			}
+			w.curID = -1
+			w.WriteString(m.spin.View())
 		}
-		w.writeMapped(body, bodyIDs)
 		w.curID = -1
 		w.WriteString("\n")
 		if src := sourceBlock(msg.Sources); src != "" {
