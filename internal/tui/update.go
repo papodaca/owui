@@ -146,8 +146,9 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sentMsg:
 		return m, m.applySent(msg)
 	case loadedMsg:
-		m.applyLoaded(msg)
-		return m, nil
+		return m, m.applyLoaded(msg)
+	case bellMsg:
+		return m, tea.Printf("\a")
 	case pollMsg:
 		return m, m.poll(msg)
 	case pollResult:

@@ -501,26 +501,30 @@ func (m *App) openChatID(id string) tea.Cmd {
 	}
 }
 
-func (m *App) applyLoaded(msg loadedMsg) {
+func (m *App) applyLoaded(msg loadedMsg) tea.Cmd {
 	if msg.err != nil {
 		m.errText = msg.err.Error()
 		if msg.why == "done" {
 			m.generating = false
 			m.status = ""
 		}
-		return
+		return nil
 	}
 	m.chatID = msg.rec.ID
 	m.chatTitle = msg.rec.DisplayTitle()
 	if msg.rec.Chat.History != nil {
 		m.history = *msg.rec.Chat.History
 	}
+	var cmd tea.Cmd
 	if msg.why == "done" {
 		m.generating = false
 		m.genAssistant = ""
 		m.taskIDs = nil
 		m.status = ""
 		m.pollSeq++
+		if msg.chime {
+			cmd = doneChime(m.chatTitle, replySnippet(m.history))
+		}
 	}
 	if len(msg.rec.Chat.Models) > 0 && msg.why == "open" {
 		m.modelID = msg.rec.Chat.Models[0]
@@ -529,6 +533,7 @@ func (m *App) applyLoaded(msg loadedMsg) {
 	if m.chatID != "" {
 		m.retitleVisible(m.chatID, m.chatTitle)
 	}
+	return cmd
 }
 
 func (m *App) schedulePoll() tea.Cmd {
@@ -588,13 +593,13 @@ func (m *App) applyPoll(msg pollResult) tea.Cmd {
 		m.syncTranscript()
 	}
 	if done, ok := assistantDone(m.history, m.genAssistant); ok && done {
-		m.finish()
-		return nil
+		m.pendingChime = true
+		return m.finish()
 	}
 	if msg.tasksErr == nil && len(msg.tasks) == 0 {
 		if msg, ok := m.history.Messages[m.genAssistant]; ok && msg.Content != "" {
-			m.finish()
-			return nil
+			m.pendingChime = true
+			return m.finish()
 		}
 	}
 	return m.schedulePoll()
@@ -626,8 +631,13 @@ func mergeHistory(local, remote api.History) api.History {
 }
 
 func (m *App) finish() tea.Cmd {
+	chime := m.pendingChime
+	m.pendingChime = false
 	if m.client == nil || m.chatID == "" {
 		m.generating = false
+		if chime {
+			return doneChime(m.chatTitle, replySnippet(m.history))
+		}
 		return nil
 	}
 	m.pollSeq++
@@ -637,7 +647,7 @@ func (m *App) finish() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		rec, err := client.GetChat(ctx, id)
-		return loadedMsg{rec: rec, why: "done", err: err}
+		return loadedMsg{rec: rec, why: "done", err: err, chime: chime}
 	}
 }
 
@@ -718,6 +728,7 @@ func (m *App) onEvent(ev socket.Event) tea.Cmd {
 		}
 		_ = json.Unmarshal(ev.Data, &data)
 		if data.Done && (ev.ChatID == "" || ev.ChatID == m.chatID) {
+			m.pendingChime = true
 			return m.finish()
 		}
 	}

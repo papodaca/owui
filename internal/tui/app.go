@@ -95,6 +95,7 @@ type App struct {
 	generating    bool
 	stickToBottom bool
 	genAssistant  string
+	pendingChime  bool
 	taskIDs       []string
 	pollSeq       int
 	genStart      time.Time
@@ -320,9 +321,10 @@ type sentMsg struct {
 }
 
 type loadedMsg struct {
-	rec api.ChatRecord
-	why string
-	err error
+	rec   api.ChatRecord
+	why   string
+	err   error
+	chime bool
 }
 
 type savedMsg struct{ err error }
