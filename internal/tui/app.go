@@ -101,14 +101,16 @@ type App struct {
 	status        string
 	errText       string
 
-	input    textarea.Model
-	vp       viewport.Model
-	spin     spinner.Model
-	md       *glamour.TermRenderer
-	mdWidth  int
-	mdCache  map[string]mdEntry
-	rendered string
-	sel      selection
+	input      textarea.Model
+	vp         viewport.Model
+	spin       spinner.Model
+	md         *glamour.TermRenderer
+	mdWidth    int
+	mdCache    map[string]mdEntry
+	rendered   string
+	sel        selection
+	copyBlocks []string
+	lineBlock  []int
 
 	overlay       int
 	pick          picker
@@ -691,6 +693,60 @@ func (m *App) layout() {
 	m.rename.SetWidth(w)
 }
 
+// lineWriter records which markdown block each transcript line came from.
+// A trailing newline leaves the extra empty Split element with no block.
+type lineWriter struct {
+	b     strings.Builder
+	ids   []int
+	curID int
+	open  bool
+}
+
+func (w *lineWriter) Write(p []byte) (int, error) {
+	w.WriteString(string(p))
+	return len(p), nil
+}
+
+func (w *lineWriter) WriteString(s string) {
+	for _, r := range s {
+		if !w.open {
+			w.ids = append(w.ids, w.curID)
+			w.open = true
+		}
+		w.b.WriteRune(r)
+		if r == '\n' {
+			w.open = false
+		}
+	}
+}
+
+func (w *lineWriter) writeMapped(text string, ids []int) {
+	if text == "" {
+		return
+	}
+	lines := strings.Split(text, "\n")
+	for i, ln := range lines {
+		id := -1
+		if i < len(ids) {
+			id = ids[i]
+		}
+		if i > 0 {
+			w.curID = -1
+			w.WriteString("\n")
+		}
+		w.curID = id
+		w.WriteString(ln)
+	}
+}
+
+func (w *lineWriter) finish() []int {
+	ids := w.ids
+	if strings.HasSuffix(w.b.String(), "\n") {
+		ids = append(ids, -1)
+	}
+	return ids
+}
+
 func (m *App) syncTranscript() {
 	m.rendered = m.transcript()
 	m.vp.SetContent(m.rendered)
@@ -780,11 +836,13 @@ func (m *App) scrollTranscript(msg tea.Msg) {
 }
 
 func (m *App) transcript() string {
+	m.copyBlocks = m.copyBlocks[:0]
 	chain := chattree.Chain(m.history)
 	if len(chain) == 0 {
+		m.lineBlock = nil
 		return m.styles.dim.Render("No chat open. Write a message to start one. It is stored on the server, so the web UI can open it too.")
 	}
-	var b strings.Builder
+	var w lineWriter
 	for _, msg := range chain {
 		name := "assistant"
 		style := m.styles.assist
@@ -794,26 +852,31 @@ func (m *App) transcript() string {
 		} else if label := m.assistantLabel(msg); label != "" {
 			name = label
 		}
-		fmt.Fprintf(&b, "%s\n", style.Render(name))
-		body := m.renderMarkdown(msg.ID, msg.Content.String())
+		w.curID = -1
+		fmt.Fprintf(&w, "%s\n", style.Render(name))
+		body, bodyIDs := m.renderMapped(msg.ID, msg.Content.String())
 		working := m.generating && msg.ID == m.genAssistant
 		if working {
 			mark := m.spin.View()
 			if body == "" {
 				body = mark
+				bodyIDs = []int{-1}
 			} else {
 				body += "\n" + mark
+				bodyIDs = append(bodyIDs, -1)
 			}
 		}
-		b.WriteString(body)
-		b.WriteString("\n")
+		w.writeMapped(body, bodyIDs)
+		w.curID = -1
+		w.WriteString("\n")
 		if src := sourceBlock(msg.Sources); src != "" {
-			b.WriteString(m.styles.dim.Render(src))
-			b.WriteString("\n")
+			w.WriteString(m.styles.dim.Render(src))
+			w.WriteString("\n")
 		}
-		b.WriteString("\n")
+		w.WriteString("\n")
 	}
-	return b.String()
+	m.lineBlock = w.finish()
+	return w.b.String()
 }
 
 func (m App) assistantLabel(msg api.Message) string {

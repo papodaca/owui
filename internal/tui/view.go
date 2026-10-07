@@ -244,6 +244,8 @@ func (m App) helpText(w int) string {
 		"tab            move focus",
 		"pgup/pgdown   scroll the chat",
 		"mouse wheel   scroll the chat",
+		"drag          copy the chat text",
+		"alt+drag      copy the markdown",
 		"",
 		"commands",
 		"/web /code /image /memory     toggle, or add on/off",

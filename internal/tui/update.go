@@ -45,7 +45,7 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.focusMainAt()
 		}
 		if cell, ok := m.transcriptCell(msg.X, msg.Y); ok {
-			m.sel = selection{active: true, anchor: cell, head: cell}
+			m.sel = selection{active: true, anchor: cell, head: cell, alt: altHeld(msg.Mod)}
 			return m, nil
 		}
 		return m, m.focusMainAt()
@@ -54,6 +54,7 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.sel.head = m.clampTranscriptCell(msg.X, msg.Y)
+		m.sel.alt = m.sel.alt || altHeld(msg.Mod)
 		m.showSelection()
 		return m, nil
 	case tea.MouseReleaseMsg:
@@ -61,14 +62,20 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.sel.head = m.clampTranscriptCell(msg.X, msg.Y)
-		text := selectedText(m.renderedText(), m.sel.anchor, m.sel.head)
+		m.sel.alt = m.sel.alt || altHeld(msg.Mod)
+		text := m.selectionText()
 		same := m.sel.anchor == m.sel.head
+		alt := m.sel.alt
 		m.sel.active = false
 		m.syncTranscript()
 		if same || strings.TrimSpace(text) == "" {
 			return m, m.focusMainAt()
 		}
-		m.status = "copied"
+		if alt {
+			m.status = "copied markdown"
+		} else {
+			m.status = "copied"
+		}
 		return m, copyText(text)
 	case tea.MouseWheelMsg:
 		if m.phase != phaseMain || m.overlay != overlayNone {
