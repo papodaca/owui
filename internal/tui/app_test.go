@@ -207,7 +207,12 @@ func TestClickTranscriptFocusesPrompt(t *testing.T) {
 	app.layout()
 	app.focus = focusSidebar
 	app.input.Blur()
-	next, cmd := app.Update(tea.MouseClickMsg{X: sidebarWidth + 4, Y: 3, Button: tea.MouseLeft})
+	next, _ := app.Update(tea.MouseClickMsg{X: sidebarWidth + 4, Y: 3, Button: tea.MouseLeft})
+	app = next.(App)
+	if !app.sel.active {
+		t.Fatalf("click did not start a selection, focus %d", app.focus)
+	}
+	next, cmd := app.Update(tea.MouseReleaseMsg{X: sidebarWidth + 4, Y: 3, Button: tea.MouseLeft})
 	got := next.(App)
 	if got.focus != focusComposer {
 		t.Fatalf("focus = %d", got.focus)

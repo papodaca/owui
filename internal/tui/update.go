@@ -37,9 +37,39 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.showSidebar && msg.X < sidebarWidth {
+			m.sel.active = false
 			return m, m.openSidebarAt(msg.Y)
 		}
-		return m, m.focusMainAt(msg.Y)
+		if m.inComposer(msg.Y) {
+			m.sel.active = false
+			return m, m.focusMainAt()
+		}
+		if cell, ok := m.transcriptCell(msg.X, msg.Y); ok {
+			m.sel = selection{active: true, anchor: cell, head: cell}
+			return m, nil
+		}
+		return m, m.focusMainAt()
+	case tea.MouseMotionMsg:
+		if !m.sel.active {
+			return m, nil
+		}
+		m.sel.head = m.clampTranscriptCell(msg.X, msg.Y)
+		m.showSelection()
+		return m, nil
+	case tea.MouseReleaseMsg:
+		if !m.sel.active || msg.Button != tea.MouseLeft {
+			return m, nil
+		}
+		m.sel.head = m.clampTranscriptCell(msg.X, msg.Y)
+		text := selectedText(m.renderedText(), m.sel.anchor, m.sel.head)
+		same := m.sel.anchor == m.sel.head
+		m.sel.active = false
+		m.syncTranscript()
+		if same || strings.TrimSpace(text) == "" {
+			return m, m.focusMainAt()
+		}
+		m.status = "copied"
+		return m, copyText(text)
 	case tea.MouseWheelMsg:
 		if m.phase != phaseMain || m.overlay != overlayNone {
 			return m, nil
@@ -404,9 +434,16 @@ func (m *App) pageScroll(msg tea.KeyPressMsg) tea.Cmd {
 	return nil
 }
 
-func (m *App) focusMainAt(y int) tea.Cmd {
+func (m *App) focusMainAt() tea.Cmd {
 	m.focus = focusComposer
 	return m.input.Focus()
+}
+
+func (m App) renderedText() string {
+	if m.rendered != "" {
+		return m.rendered
+	}
+	return m.vp.GetContent()
 }
 
 func (m *App) openSidebarAt(y int) tea.Cmd {

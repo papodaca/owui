@@ -101,12 +101,14 @@ type App struct {
 	status        string
 	errText       string
 
-	input   textarea.Model
-	vp      viewport.Model
-	spin    spinner.Model
-	md      *glamour.TermRenderer
-	mdWidth int
-	mdCache map[string]mdEntry
+	input    textarea.Model
+	vp       viewport.Model
+	spin     spinner.Model
+	md       *glamour.TermRenderer
+	mdWidth  int
+	mdCache  map[string]mdEntry
+	rendered string
+	sel      selection
 
 	overlay       int
 	pick          picker
@@ -690,7 +692,8 @@ func (m *App) layout() {
 }
 
 func (m *App) syncTranscript() {
-	m.vp.SetContent(m.transcript())
+	m.rendered = m.transcript()
+	m.vp.SetContent(m.rendered)
 	if m.stickToBottom {
 		m.vp.GotoBottom()
 	}
