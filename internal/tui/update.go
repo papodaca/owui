@@ -33,11 +33,13 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.quitArmed = false
 		return m, nil
 	case tea.MouseClickMsg:
-		if m.phase == phaseMain && m.overlay == overlayNone && m.showSidebar && msg.Button == tea.MouseLeft && msg.X < sidebarWidth {
-			m.focusSidebarAt(msg.Y)
+		if m.phase != phaseMain || m.overlay != overlayNone || msg.Button != tea.MouseLeft {
 			return m, nil
 		}
-		return m, nil
+		if m.showSidebar && msg.X < sidebarWidth {
+			return m, m.openSidebarAt(msg.Y)
+		}
+		return m, m.focusMainAt(msg.Y)
 	case tea.MouseWheelMsg:
 		if m.phase != phaseMain || m.overlay != overlayNone {
 			return m, nil
@@ -402,15 +404,25 @@ func (m *App) pageScroll(msg tea.KeyPressMsg) tea.Cmd {
 	return nil
 }
 
-func (m *App) focusSidebarAt(y int) {
+func (m *App) focusMainAt(y int) tea.Cmd {
+	m.focus = focusComposer
+	return m.input.Focus()
+}
+
+func (m *App) openSidebarAt(y int) tea.Cmd {
 	m.focus = focusSidebar
 	m.input.Blur()
 	items := m.visibleChats()
 	start, _, _ := m.sidebarWindow(len(items))
 	idx := start + (y - 2)
-	if y >= 2 && idx >= 0 && idx < len(items) {
-		m.selected = idx
+	if y < 2 || idx < 0 || idx >= len(items) {
+		return nil
 	}
+	m.selected = idx
+	if items[idx].ID == m.chatID {
+		return nil
+	}
+	return m.openChatID(items[idx].ID)
 }
 
 func (m *App) cycleFocus(dir int) tea.Cmd {

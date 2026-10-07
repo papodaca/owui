@@ -198,6 +198,43 @@ func TestAssistantLabelUsesModelName(t *testing.T) {
 	}
 }
 
+func TestClickTranscriptFocusesPrompt(t *testing.T) {
+	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
+	app.phase = phaseMain
+	app.showSidebar = true
+	app.width = 100
+	app.height = 24
+	app.layout()
+	app.focus = focusSidebar
+	app.input.Blur()
+	next, cmd := app.Update(tea.MouseClickMsg{X: sidebarWidth + 4, Y: 3, Button: tea.MouseLeft})
+	got := next.(App)
+	if got.focus != focusComposer {
+		t.Fatalf("focus = %d", got.focus)
+	}
+	if cmd == nil {
+		t.Fatal("prompt was not focused")
+	}
+}
+
+func TestClickSidebarTitleOpensChat(t *testing.T) {
+	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
+	app.phase = phaseMain
+	app.showSidebar = true
+	app.height = 20
+	app.client = api.New("http://127.0.0.1:9", "k")
+	app.chatID = "a"
+	app.chats = []store.Entry{{ID: "a", Title: "one"}, {ID: "b", Title: "two"}}
+	next, cmd := app.Update(tea.MouseClickMsg{X: 2, Y: 3, Button: tea.MouseLeft})
+	got := next.(App)
+	if got.focus != focusSidebar || got.selected != 1 {
+		t.Fatalf("focus %d selected %d", got.focus, got.selected)
+	}
+	if cmd == nil {
+		t.Fatal("click did not open the chat")
+	}
+}
+
 func TestSpinnerShowsWhileGenerating(t *testing.T) {
 	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
 	app.generating = true
