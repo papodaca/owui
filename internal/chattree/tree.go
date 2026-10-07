@@ -4,8 +4,10 @@
 package chattree
 
 import (
+	"strings"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/google/uuid"
 	"github.com/usr1/owui/internal/api"
 )
@@ -146,12 +148,9 @@ func CompletionMessages(h api.History) []api.CompletionMessage {
 	return out
 }
 
-// TitleFromPrompt is a short title used until the server generates one.
+// TitleFromPrompt is a one-line stand-in until the server generates a title.
+// It has to fit the sidebar column, which is about 30 cells wide.
 func TitleFromPrompt(prompt string) string {
-	const max = 48
-	r := []rune(prompt)
-	if len(r) <= max {
-		return prompt
-	}
-	return string(r[:max-1]) + "…"
+	prompt = strings.Join(strings.Fields(prompt), " ")
+	return ansi.Truncate(prompt, 28, "…")
 }

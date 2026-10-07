@@ -2,8 +2,10 @@ package chattree
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/usr1/owui/internal/api"
 )
 
@@ -82,6 +84,16 @@ func TestAppendPatchLinksPrevious(t *testing.T) {
 	}
 	if msgs[2].Content != "more" {
 		t.Fatalf("last = %s", msgs[2].Content)
+	}
+}
+
+func TestTitleFromPromptStaysOneSidebarLine(t *testing.T) {
+	got := TitleFromPrompt("using web search write me a greeting for the team\nplease")
+	if strings.Contains(got, "\n") {
+		t.Fatalf("title has a newline: %q", got)
+	}
+	if w := ansi.StringWidth(got); w > 28 {
+		t.Fatalf("width %d, title %q", w, got)
 	}
 }
 

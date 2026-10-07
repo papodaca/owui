@@ -184,14 +184,15 @@ func (m App) sidebarView() string {
 		if title == "" {
 			title = "untitled"
 		}
-		line := clip(title, sidebarWidth-1)
+		line := clip(title, sidebarWidth-2)
+		row := lipgloss.NewStyle().Inline(true)
 		switch {
 		case idx == m.selected && m.focus == focusSidebar:
-			line = m.styles.sel.Render(line)
+			row = m.styles.sel.Inline(true)
 		case e.ID == m.chatID:
-			line = m.styles.accent.Render(line)
+			row = m.styles.accent.Inline(true)
 		}
-		b.WriteString(line)
+		b.WriteString(row.Render(line))
 		b.WriteString("\n")
 	}
 	style := lipgloss.NewStyle().Width(sidebarWidth-1).Height(m.height).Border(lipgloss.NormalBorder(), false, true, false, false)
