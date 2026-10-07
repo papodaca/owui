@@ -693,6 +693,62 @@ func (m *App) syncTranscript() {
 
 // scrollTranscript moves the chat. Scrolling up stops pinning the view to the
 // newest line, so a later token does not yank it back down.
+func (m App) sidebarWindow(n int) (start, end, limit int) {
+	limit = m.height - 4
+	if limit < 1 {
+		limit = 1
+	}
+	if m.selected >= limit {
+		start = m.selected - limit + 1
+	}
+	if start > n {
+		start = n
+	}
+	end = start + limit
+	if end > n {
+		end = n
+	}
+	return start, end, limit
+}
+
+func (m *App) scrollSidebar(msg tea.Msg) {
+	if len(m.visibleChats()) == 0 {
+		return
+	}
+	page := m.height - 4
+	if page < 1 {
+		page = 1
+	}
+	delta := 0
+	switch msg := msg.(type) {
+	case tea.MouseWheelMsg:
+		switch msg.Button {
+		case tea.MouseWheelUp:
+			delta = -3
+		case tea.MouseWheelDown:
+			delta = 3
+		}
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "pgup", "ctrl+up":
+			delta = -page
+		case "pgdown", "ctrl+down":
+			delta = page
+		}
+		if msg.Code == tea.KeyPgUp {
+			delta = -page
+		}
+		if msg.Code == tea.KeyPgDown {
+			delta = page
+		}
+	}
+	if delta == 0 {
+		return
+	}
+	m.selected += delta
+	m.clampSelected()
+}
+
 func (m *App) scrollTranscript(msg tea.Msg) {
 	m.vp, _ = m.vp.Update(msg)
 	switch msg := msg.(type) {

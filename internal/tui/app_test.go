@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/usr1/owui/internal/config"
+	"github.com/usr1/owui/internal/store"
 )
 
 func TestLoginRenders(t *testing.T) {
@@ -118,6 +119,62 @@ func TestWheelScrollsWhilePromptFocused(t *testing.T) {
 	}
 	if got.stickToBottom {
 		t.Fatal("view stayed pinned after scrolling up")
+	}
+}
+
+func TestPageUpScrollsSidebarNotTranscript(t *testing.T) {
+	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
+	app.phase = phaseMain
+	app.focus = focusComposer
+	app.showSidebar = true
+	app.height = 12
+	app.chats = make([]store.Entry, 40)
+	for i := range app.chats {
+		app.chats[i] = store.Entry{ID: strings.Repeat("x", i+1), Title: "chat"}
+	}
+	app.selected = 30
+	app.vp.SetWidth(20)
+	app.vp.SetHeight(4)
+	app.vp.SetContent(strings.Repeat("line\n", 40))
+	app.vp.GotoBottom()
+	chatAt := app.vp.YOffset()
+
+	next, _ := app.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	focused := next.(App)
+	if focused.focus != focusSidebar {
+		t.Fatalf("tab focus = %d", focused.focus)
+	}
+	next, _ = focused.Update(tea.KeyPressMsg{Code: tea.KeyPgUp})
+	got := next.(App)
+	if got.selected >= 30 {
+		t.Fatalf("sidebar selection stayed at %d", got.selected)
+	}
+	if got.vp.YOffset() != chatAt {
+		t.Fatalf("page up moved the transcript from %d to %d", chatAt, got.vp.YOffset())
+	}
+}
+
+func TestWheelScrollsSidebarWhenFocused(t *testing.T) {
+	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
+	app.phase = phaseMain
+	app.focus = focusSidebar
+	app.height = 12
+	app.chats = make([]store.Entry, 40)
+	for i := range app.chats {
+		app.chats[i] = store.Entry{ID: strings.Repeat("x", i+1), Title: "chat"}
+	}
+	app.selected = 30
+	app.vp.SetHeight(4)
+	app.vp.SetContent(strings.Repeat("line\n", 40))
+	app.vp.GotoBottom()
+	chatAt := app.vp.YOffset()
+	next, _ := app.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
+	got := next.(App)
+	if got.selected >= 30 {
+		t.Fatalf("sidebar selection stayed at %d", got.selected)
+	}
+	if got.vp.YOffset() != chatAt {
+		t.Fatal("wheel moved the transcript while the sidebar was focused")
 	}
 }
 

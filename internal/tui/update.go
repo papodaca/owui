@@ -23,8 +23,18 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case quitResetMsg:
 		m.quitArmed = false
 		return m, nil
+	case tea.MouseClickMsg:
+		if m.phase == phaseMain && m.overlay == overlayNone && m.showSidebar && msg.Button == tea.MouseLeft && msg.X < sidebarWidth {
+			m.focusSidebarAt(msg.Y)
+			return m, nil
+		}
+		return m, nil
 	case tea.MouseWheelMsg:
 		if m.phase != phaseMain || m.overlay != overlayNone {
+			return m, nil
+		}
+		if m.focus == focusSidebar {
+			m.scrollSidebar(msg)
 			return m, nil
 		}
 		m.scrollTranscript(msg)
@@ -283,16 +293,17 @@ func (m *App) updateMain(msg tea.KeyPressMsg) tea.Cmd {
 		m.newChat()
 		return nil
 	case "ctrl+k":
-		if m.focus == focusSidebar {
+		// First press shows and focuses the list. The next press hides it.
+		if m.focus == focusSidebar && m.showSidebar {
+			m.showSidebar = false
 			m.focus = focusComposer
-			m.showSidebar = true
+			m.layout()
+			m.syncTranscript()
 			return m.input.Focus()
 		}
-		m.showSidebar = !m.showSidebar
-		if m.showSidebar {
-			m.focus = focusSidebar
-			m.input.Blur()
-		}
+		m.showSidebar = true
+		m.focus = focusSidebar
+		m.input.Blur()
 		m.layout()
 		m.syncTranscript()
 		return nil
@@ -314,8 +325,7 @@ func (m *App) updateMain(msg tea.KeyPressMsg) tea.Cmd {
 	case "ctrl+e":
 		return m.toggleChatScope()
 	case "pgup", "pgdown", "ctrl+up", "ctrl+down":
-		m.scrollTranscript(msg)
-		return nil
+		return m.pageScroll(msg)
 	case "esc":
 		if m.generating {
 			return m.stop()
@@ -374,10 +384,33 @@ func (m App) promptScroll(msg tea.KeyPressMsg) bool {
 	}
 }
 
+func (m *App) pageScroll(msg tea.KeyPressMsg) tea.Cmd {
+	if m.focus == focusSidebar {
+		m.scrollSidebar(msg)
+		return nil
+	}
+	m.scrollTranscript(msg)
+	return nil
+}
+
+func (m *App) focusSidebarAt(y int) {
+	m.focus = focusSidebar
+	m.input.Blur()
+	items := m.visibleChats()
+	start, _, _ := m.sidebarWindow(len(items))
+	idx := start + (y - 2)
+	if y >= 2 && idx >= 0 && idx < len(items) {
+		m.selected = idx
+	}
+}
+
 func (m *App) cycleFocus(dir int) tea.Cmd {
-	order := []int{focusComposer, focusChat}
+	if m.focus == focusChat {
+		m.focus = focusComposer
+	}
+	order := []int{focusComposer}
 	if m.showSidebar {
-		order = []int{focusComposer, focusSidebar, focusChat}
+		order = []int{focusComposer, focusSidebar}
 	}
 	idx := 0
 	for i, f := range order {

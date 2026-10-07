@@ -160,7 +160,11 @@ func (m App) chip(label string, wanted, effective bool, feature string) string {
 
 func (m App) sidebarView() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n", m.styles.title.Render("chats"))
+	if m.focus == focusSidebar {
+		fmt.Fprintf(&b, "%s\n", m.styles.accent.Render("chats"))
+	} else {
+		fmt.Fprintf(&b, "%s\n", m.styles.title.Render("chats"))
+	}
 	if m.filtering {
 		fmt.Fprintf(&b, "%s\n", m.styles.accent.Render(clip("/"+m.filter, sidebarWidth-3)))
 	} else if m.showAll {
@@ -169,21 +173,7 @@ func (m App) sidebarView() string {
 		fmt.Fprintf(&b, "%s\n", m.styles.dim.Render("this client  ^e"))
 	}
 	items := m.visibleChats()
-	limit := m.height - 4
-	if limit < 1 {
-		limit = 1
-	}
-	start := 0
-	if m.selected >= limit {
-		start = m.selected - limit + 1
-	}
-	if start > len(items) {
-		start = len(items)
-	}
-	end := start + limit
-	if end > len(items) {
-		end = len(items)
-	}
+	start, end, _ := m.sidebarWindow(len(items))
 	if len(items) == 0 {
 		b.WriteString(m.styles.dim.Render("none yet"))
 		b.WriteString("\n")
