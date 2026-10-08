@@ -30,10 +30,12 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spin, cmd = m.spin.Update(msg)
-		if !m.generating {
+		if len(m.jobs) == 0 {
 			return m, nil
 		}
-		m.syncTranscript()
+		if m.openJob() != nil {
+			m.syncTranscript()
+		}
 		return m, cmd
 	case quitResetMsg:
 		m.quitArmed = false
@@ -164,7 +166,10 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.errText = msg.err.Error()
 		}
 		m.status = "stopped"
-		return m, m.finish()
+		if msg.id != "" && msg.id == m.chatID {
+			return m, m.reloadChat()
+		}
+		return m, nil
 	case deletedMsg:
 		m.confirmDelete = false
 		if msg.err != nil {
@@ -204,38 +209,47 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *App) applySent(msg sentMsg) tea.Cmd {
+	j := m.jobs[msg.assistant]
 	if msg.err != nil {
-		m.generating = false
-		m.pollSeq++
+		open := j != nil && (j.chatID == m.chatID || (j.chatID == "" && j.token == m.viewToken && m.chatID == ""))
+		if j != nil {
+			m.dropJob(j.assistant)
+		}
 		m.status = ""
 		m.errText = msg.err.Error()
-		if msg.created {
-			m.chatID = ""
+		if msg.created && open {
 			m.chatTitle = ""
 			m.history.Messages = nil
 			m.history.CurrentID = ""
-			m.genAssistant = ""
 			m.input.SetValue(msg.prompt)
 			m.syncTranscript()
 			return nil
 		}
-		if m.client != nil && m.chatID != "" {
+		if !msg.created && open && m.client != nil && m.chatID != "" {
 			return m.reloadChat()
 		}
 		return nil
 	}
-	m.chatID = msg.id
+	if j == nil {
+		return nil
+	}
+	id := msg.id
 	if msg.ack.ChatID != "" {
-		m.chatID = msg.ack.ChatID
+		id = msg.ack.ChatID
 	}
-	m.taskIDs = msg.ack.TaskIDs
-	m.chatTitle = msg.title
-	m.status = "working"
+	j.chatID = id
+	j.taskIDs = msg.ack.TaskIDs
+	still := m.chatID == id || (msg.created && j.token == m.viewToken && m.chatID == "")
+	if still {
+		m.chatID = id
+		m.chatTitle = msg.title
+		m.status = "working"
+	}
 	if m.index != nil {
-		_ = m.index.Put(m.storeKey(), store.Entry{ID: m.chatID, Title: m.chatTitle, UpdatedAt: time.Now().Unix()})
-		m.upsertVisible(store.Entry{ID: m.chatID, Title: m.chatTitle, UpdatedAt: time.Now().Unix()})
+		_ = m.index.Put(m.storeKey(), store.Entry{ID: id, Title: msg.title, UpdatedAt: time.Now().Unix()})
+		m.upsertVisible(store.Entry{ID: id, Title: msg.title, UpdatedAt: time.Now().Unix()})
 	}
-	return m.schedulePoll()
+	return m.schedulePoll(j)
 }
 
 func (m *App) paste(msg tea.PasteMsg) tea.Cmd {
@@ -382,7 +396,7 @@ func (m *App) updateMain(msg tea.KeyPressMsg) tea.Cmd {
 	case "pgup", "pgdown", "ctrl+up", "ctrl+down":
 		return m.pageScroll(msg)
 	case "esc":
-		if m.generating {
+		if m.openJob() != nil {
 			return m.stop()
 		}
 		if m.focus != focusComposer {

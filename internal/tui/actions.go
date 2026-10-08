@@ -53,16 +53,11 @@ func (m *App) submitLogin() tea.Cmd {
 type signedInMsg struct{ user api.User }
 
 func (m *App) newChat() {
-	if m.generating {
-		m.errText = "stop the reply before opening another chat"
-		return
-	}
+	m.viewToken++
 	m.chatID = ""
 	m.chatTitle = ""
 	m.history = api.History{}
 	m.stickToBottom = true
-	m.genAssistant = ""
-	m.taskIDs = nil
 	m.status = ""
 	m.errText = ""
 	m.confirmDelete = false
@@ -77,7 +72,7 @@ func (m *App) send() tea.Cmd {
 	if handled, cmd := m.slash(text); handled {
 		return cmd
 	}
-	if m.generating {
+	if m.openJob() != nil {
 		m.errText = "a reply is still running"
 		return nil
 	}
@@ -128,11 +123,15 @@ func (m *App) send() tea.Cmd {
 		m.history.CurrentID = turn.AssistantID
 	}
 	userMessage := turn.User
-	m.generating = true
-	m.genAssistant = turn.AssistantID
-	m.genStart = time.Now()
-	m.taskIDs = nil
-	m.pollSeq++
+	m.ensureJobs()
+	first := len(m.jobs) == 0
+	job := &genJob{assistant: turn.AssistantID, started: time.Now(), seq: 1}
+	if m.chatID == "" {
+		job.token = m.viewToken
+	} else {
+		job.chatID = m.chatID
+	}
+	m.jobs[job.assistant] = job
 	m.input.SetValue("")
 	m.syncTranscript()
 
@@ -184,7 +183,10 @@ func (m *App) send() tea.Cmd {
 			err:       err,
 		}
 	}
-	return tea.Batch(work, m.spinTick())
+	if first {
+		return tea.Batch(work, m.spinTick())
+	}
+	return work
 }
 
 func (m App) spinTick() tea.Cmd {
@@ -476,10 +478,6 @@ func (m *App) openSelected() tea.Cmd {
 }
 
 func (m *App) openChatID(id string) tea.Cmd {
-	if m.generating {
-		m.errText = "stop the reply before opening another chat"
-		return nil
-	}
 	if m.client == nil || id == "" {
 		return nil
 	}
@@ -505,26 +503,36 @@ func (m *App) applyLoaded(msg loadedMsg) tea.Cmd {
 	if msg.err != nil {
 		m.errText = msg.err.Error()
 		if msg.why == "done" {
-			m.generating = false
+			if j := m.jobByChat(msg.rec.ID); j != nil {
+				m.dropJob(j.assistant)
+			}
 			m.status = ""
 		}
 		return nil
+	}
+	var cmd tea.Cmd
+	if msg.why == "done" {
+		if j := m.jobByChat(msg.rec.ID); j != nil {
+			m.dropJob(j.assistant)
+		}
+		m.status = ""
+		title := msg.rec.DisplayTitle()
+		hist := m.history
+		if msg.rec.Chat.History != nil {
+			hist = *msg.rec.Chat.History
+		}
+		if msg.chime {
+			cmd = doneChime(title, replySnippet(hist), m.termFocused)
+		}
+		if msg.why == "done" && msg.rec.ID != "" && msg.rec.ID != m.chatID {
+			m.retitleVisible(msg.rec.ID, title)
+			return cmd
+		}
 	}
 	m.chatID = msg.rec.ID
 	m.chatTitle = msg.rec.DisplayTitle()
 	if msg.rec.Chat.History != nil {
 		m.history = *msg.rec.Chat.History
-	}
-	var cmd tea.Cmd
-	if msg.why == "done" {
-		m.generating = false
-		m.genAssistant = ""
-		m.taskIDs = nil
-		m.status = ""
-		m.pollSeq++
-		if msg.chime {
-			cmd = doneChime(m.chatTitle, replySnippet(m.history), m.termFocused)
-		}
 	}
 	if len(msg.rec.Chat.Models) > 0 && msg.why == "open" {
 		m.modelID = msg.rec.Chat.Models[0]
@@ -536,30 +544,33 @@ func (m *App) applyLoaded(msg loadedMsg) tea.Cmd {
 	return cmd
 }
 
-func (m *App) schedulePoll() tea.Cmd {
-	if !m.generating || m.chatID == "" {
+func (m *App) schedulePoll(j *genJob) tea.Cmd {
+	if j == nil || j.chatID == "" || m.jobs[j.assistant] == nil {
 		return nil
 	}
-	id := m.chatID
-	seq := m.pollSeq
+	id, asst, seq := j.chatID, j.assistant, j.seq
 	return tea.Tick(time.Second, func(time.Time) tea.Msg {
-		return pollMsg{id: id, seq: seq}
+		return pollMsg{id: id, assistant: asst, seq: seq}
 	})
 }
 
 func (m *App) poll(msg pollMsg) tea.Cmd {
-	if !m.generating || msg.seq != m.pollSeq || msg.id != m.chatID {
+	j := m.jobs[msg.assistant]
+	if j == nil || j.seq != msg.seq || j.chatID != msg.id {
 		return nil
 	}
-	if time.Since(m.genStart) > 15*time.Minute {
-		m.generating = false
-		m.errText = "timed out waiting for the reply"
-		m.status = ""
+	if time.Since(j.started) > 15*time.Minute {
+		open := m.openJob() == j
+		m.dropJob(j.assistant)
+		if open {
+			m.errText = "timed out waiting for the reply"
+			m.status = ""
+		}
 		return nil
 	}
 	client := m.client
-	id := m.chatID
-	asst := m.genAssistant
+	id := j.chatID
+	asst := j.assistant
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
@@ -579,30 +590,43 @@ type pollResult struct {
 }
 
 func (m *App) applyPoll(msg pollResult) tea.Cmd {
-	if !m.generating || msg.id != m.chatID {
-		return m.schedulePoll()
+	j := m.jobs[msg.assistant]
+	if j == nil || j.chatID != msg.id {
+		return nil
 	}
 	if msg.tasksErr == nil {
-		m.taskIDs = msg.tasks
+		j.taskIDs = msg.tasks
 	}
+	viewing := msg.id == m.chatID
+	hist := api.History{}
 	if msg.recErr == nil && msg.rec.Chat.History != nil {
-		m.history = mergeHistory(m.history, *msg.rec.Chat.History)
+		hist = *msg.rec.Chat.History
 		if title := msg.rec.DisplayTitle(); title != "" && title != "New Chat" {
-			m.chatTitle = title
+			if viewing {
+				m.chatTitle = title
+			}
+			m.retitleVisible(msg.id, title)
 		}
-		m.syncTranscript()
+		if viewing {
+			m.history = mergeHistory(m.history, hist)
+			m.syncTranscript()
+		}
+	} else if viewing {
+		hist = m.history
 	}
-	if done, ok := assistantDone(m.history, m.genAssistant); ok && done {
-		m.pendingChime = true
-		return m.finish()
+	if hist.Messages != nil {
+		if done, ok := assistantDone(hist, j.assistant); ok && done {
+			j.chime = true
+			return m.finish(j)
+		}
 	}
 	if msg.tasksErr == nil && len(msg.tasks) == 0 {
-		if msg, ok := m.history.Messages[m.genAssistant]; ok && msg.Content != "" {
-			m.pendingChime = true
-			return m.finish()
+		if msg, ok := hist.Messages[j.assistant]; ok && msg.Content != "" {
+			j.chime = true
+			return m.finish(j)
 		}
 	}
-	return m.schedulePoll()
+	return m.schedulePoll(j)
 }
 
 func assistantDone(h api.History, id string) (bool, bool) {
@@ -630,19 +654,20 @@ func mergeHistory(local, remote api.History) api.History {
 	return remote
 }
 
-func (m *App) finish() tea.Cmd {
-	chime := m.pendingChime
-	m.pendingChime = false
-	if m.client == nil || m.chatID == "" {
-		m.generating = false
+func (m *App) finish(j *genJob) tea.Cmd {
+	if j == nil || m.jobs[j.assistant] == nil {
+		return nil
+	}
+	chime := j.chime
+	id := j.chatID
+	m.dropJob(j.assistant)
+	if m.client == nil || id == "" {
 		if chime {
 			return doneChime(m.chatTitle, replySnippet(m.history), m.termFocused)
 		}
 		return nil
 	}
-	m.pollSeq++
 	client := m.client
-	id := m.chatID
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
@@ -652,16 +677,19 @@ func (m *App) finish() tea.Cmd {
 }
 
 func (m *App) stop() tea.Cmd {
-	if !m.generating {
+	j := m.openJob()
+	if j == nil {
 		return nil
 	}
 	client := m.client
-	ids := append([]string{}, m.taskIDs...)
-	chatID := m.chatID
+	ids := append([]string{}, j.taskIDs...)
+	chatID := j.chatID
+	assistant := j.assistant
+	m.dropJob(assistant)
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
-		if len(ids) == 0 && chatID != "" {
+		if len(ids) == 0 && chatID != "" && client != nil {
 			ids, _ = client.ChatTasks(ctx, chatID)
 		}
 		var first error
@@ -670,7 +698,7 @@ func (m *App) stop() tea.Cmd {
 				first = err
 			}
 		}
-		return stoppedMsg{err: first}
+		return stoppedMsg{id: chatID, assistant: assistant, err: first}
 	}
 }
 
@@ -693,10 +721,16 @@ func (m *App) onEvent(ev socket.Event) tea.Cmd {
 		if data.Title == "" {
 			_ = json.Unmarshal(ev.Data, &data.Title)
 		}
-		if data.Title != "" && (ev.ChatID == "" || ev.ChatID == m.chatID) {
-			m.chatTitle = data.Title
-			if m.chatID != "" {
-				m.retitleVisible(m.chatID, data.Title)
+		if data.Title != "" && (ev.ChatID == "" || ev.ChatID == m.chatID || m.jobByChat(ev.ChatID) != nil) {
+			id := ev.ChatID
+			if id == "" {
+				id = m.chatID
+			}
+			if id == "" || id == m.chatID {
+				m.chatTitle = data.Title
+			}
+			if id != "" {
+				m.retitleVisible(id, data.Title)
 			}
 		}
 	case "status":
@@ -715,10 +749,18 @@ func (m *App) onEvent(ev socket.Event) tea.Cmd {
 			}
 		}
 	case "chat:message:error":
+		j := m.jobByChat(ev.ChatID)
+		if ev.ChatID == "" {
+			j = m.openJob()
+		}
+		if ev.ChatID != "" && j == nil && ev.ChatID != m.chatID {
+			return nil
+		}
+		if j != nil {
+			m.dropJob(j.assistant)
+		}
 		m.errText = errorText(ev.Data)
-		m.generating = false
 		m.status = ""
-		m.pollSeq++
 	case "message":
 		m.appendContent(ev, true)
 	case "replace", "chat:completion":
@@ -727,9 +769,18 @@ func (m *App) onEvent(ev socket.Event) tea.Cmd {
 			Done bool `json:"done"`
 		}
 		_ = json.Unmarshal(ev.Data, &data)
-		if data.Done && (ev.ChatID == "" || ev.ChatID == m.chatID) {
-			m.pendingChime = true
-			return m.finish()
+		if data.Done {
+			j := m.jobByChat(ev.ChatID)
+			if j == nil && ev.ChatID == "" {
+				j = m.openJob()
+			}
+			if j != nil {
+				if ev.ChatID != "" {
+					j.chatID = ev.ChatID
+				}
+				j.chime = true
+				return m.finish(j)
+			}
 		}
 	}
 	return nil
@@ -803,7 +854,7 @@ func (m *App) deleteSelected() tea.Cmd {
 		return nil
 	}
 	e := items[m.selected]
-	if e.ID == m.chatID && m.generating {
+	if m.jobByChat(e.ID) != nil {
 		m.errText = "stop the reply before deleting this chat"
 		m.confirmDelete = false
 		return nil

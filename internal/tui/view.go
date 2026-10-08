@@ -90,6 +90,9 @@ func (m App) headerLine() string {
 		who = m.user.Email
 	}
 	line := title
+	if m.openJob() != nil {
+		line = m.spin.View() + "  " + line
+	}
 	if who != "" {
 		line += "  " + who
 	}
@@ -185,7 +188,16 @@ func (m App) sidebarView() string {
 		if title == "" {
 			title = "untitled"
 		}
-		line := clip(title, sidebarWidth-2)
+		limit := sidebarWidth - 2
+		prefix := ""
+		if m.jobByChat(e.ID) != nil {
+			prefix = m.spin.View() + " "
+			limit -= ansi.StringWidth(prefix)
+			if limit < 1 {
+				limit = 1
+			}
+		}
+		line := prefix + clip(title, limit)
 		row := lipgloss.NewStyle().Inline(true)
 		switch {
 		case idx == m.selected && m.focus == focusSidebar:

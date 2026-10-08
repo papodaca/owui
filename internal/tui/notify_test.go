@@ -34,7 +34,7 @@ func TestDoneReplyChimes(t *testing.T) {
 	t.Setenv("HERDR_PANE_ID", "")
 	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
 	app.termFocused = false
-	app.generating = true
+	app.jobs = map[string]*genJob{"x": {chatID: "c", assistant: "x"}}
 	cmd := app.applyLoaded(loadedMsg{
 		why:   "done",
 		chime: true,
@@ -43,7 +43,7 @@ func TestDoneReplyChimes(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("finished reply was silent")
 	}
-	if app.generating {
+	if app.jobByChat("c") != nil {
 		t.Fatal("still generating")
 	}
 	quiet := app.applyLoaded(loadedMsg{why: "done", rec: api.ChatRecord{ID: "c"}})
@@ -56,7 +56,6 @@ func TestFocusedWindowSkipsChime(t *testing.T) {
 	t.Setenv("HERDR_ENV", "")
 	t.Setenv("HERDR_PANE_ID", "")
 	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
-	app.generating = true
 	app.termFocused = true
 	cmd := app.applyLoaded(loadedMsg{
 		why:   "done",

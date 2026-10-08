@@ -92,14 +92,10 @@ type App struct {
 	chatTitle string
 	history   api.History
 
-	generating    bool
 	stickToBottom bool
 	termFocused   bool
-	genAssistant  string
-	pendingChime  bool
-	taskIDs       []string
-	pollSeq       int
-	genStart      time.Time
+	viewToken     int
+	jobs          map[string]*genJob
 	status        string
 	errText       string
 
@@ -332,11 +328,16 @@ type loadedMsg struct {
 type savedMsg struct{ err error }
 
 type pollMsg struct {
-	id  string
-	seq int
+	id        string
+	assistant string
+	seq       int
 }
 
-type stoppedMsg struct{ err error }
+type stoppedMsg struct {
+	id        string
+	assistant string
+	err       error
+}
 
 func (m *App) bootstrap() tea.Cmd {
 	cfg := m.cfg
@@ -886,7 +887,10 @@ func (m *App) transcript() string {
 			w.writeMapped(body, bodyIDs)
 			wrote = true
 		}
-		working := m.generating && msg.ID == m.genAssistant
+		working := false
+		if j := m.openJob(); j != nil && j.assistant == msg.ID {
+			working = true
+		}
 		if working {
 			if wrote {
 				w.curID = -1

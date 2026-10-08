@@ -290,6 +290,99 @@ func TestClickTranscriptFocusesPrompt(t *testing.T) {
 	}
 }
 
+func TestSwitchChatWhileGenerating(t *testing.T) {
+	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
+	app.phase = phaseMain
+	app.client = api.New("http://127.0.0.1:9", "k")
+	app.jobs = map[string]*genJob{"aa": {chatID: "a", assistant: "aa"}}
+	app.chatID = "a"
+	app.chats = []store.Entry{{ID: "a", Title: "one"}, {ID: "b", Title: "two"}}
+	cmd := app.openChatID("b")
+	if cmd == nil {
+		t.Fatal("click was refused")
+	}
+	if app.errText != "" {
+		t.Fatal(app.errText)
+	}
+	if app.jobByChat("a") == nil {
+		t.Fatal("the reply was cancelled")
+	}
+}
+
+func TestFinishedReplyDoesNotStealTheOpenChat(t *testing.T) {
+	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
+	app.termFocused = true
+	app.chatID = "b"
+	app.chatTitle = "other"
+	app.jobs = map[string]*genJob{
+		"aa": {chatID: "a", assistant: "aa"},
+		"bb": {chatID: "b", assistant: "bb"},
+	}
+	app.history = api.History{CurrentID: "keep", Messages: map[string]api.Message{
+		"keep": {ID: "keep", Role: "user", Content: "stay"},
+	}}
+	_ = app.applyLoaded(loadedMsg{
+		why: "done",
+		rec: api.ChatRecord{ID: "a", Title: "one"},
+	})
+	if app.chatID != "b" || app.history.CurrentID != "keep" {
+		t.Fatalf("open chat changed to %s %s", app.chatID, app.history.CurrentID)
+	}
+	if app.jobByChat("a") != nil {
+		t.Fatal("finished chat still marked working")
+	}
+	if app.jobByChat("b") == nil {
+		t.Fatal("the other reply was cancelled")
+	}
+}
+
+func TestSidebarMarksWorkingChat(t *testing.T) {
+	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
+	app.showSidebar = true
+	app.height = 20
+	app.jobs = map[string]*genJob{"aa": {chatID: "a", assistant: "aa"}}
+	app.chatID = "b"
+	app.chats = []store.Entry{{ID: "a", Title: "one"}, {ID: "b", Title: "two"}}
+	plain := ansi.Strip(app.sidebarView())
+	one := strings.Index(plain, "one")
+	two := strings.Index(plain, "two")
+	mark := strings.Index(plain, "⠋")
+	if mark < 0 || one < mark || two < one {
+		t.Fatalf("sidebar =\n%s", plain)
+	}
+	if strings.Count(plain, "⠋") != 1 {
+		t.Fatalf("sidebar =\n%s", plain)
+	}
+}
+
+func TestSendWhileAnotherChatWorks(t *testing.T) {
+	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
+	app.client = api.New("http://127.0.0.1:9", "k")
+	app.modelID = "m"
+	app.chatID = "b"
+	app.history = api.History{
+		CurrentID: "u",
+		Messages: map[string]api.Message{
+			"u": {ID: "u", Role: "user", Content: "hi", ChildrenIDs: api.IDList{}},
+		},
+	}
+	app.jobs = map[string]*genJob{"aa": {chatID: "a", assistant: "aa", seq: 1}}
+	app.input.SetValue("next question")
+	cmd := app.send()
+	if app.errText != "" {
+		t.Fatal(app.errText)
+	}
+	if cmd == nil {
+		t.Fatal("did not send")
+	}
+	if app.jobByChat("a") == nil {
+		t.Fatal("the first reply was dropped")
+	}
+	if app.openJob() == nil || app.openJob().chatID != "b" {
+		t.Fatal("the second chat did not start")
+	}
+}
+
 func TestClickSidebarTitleOpensChat(t *testing.T) {
 	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
 	app.phase = phaseMain
@@ -310,8 +403,8 @@ func TestClickSidebarTitleOpensChat(t *testing.T) {
 
 func TestSpinnerShowsWhileGenerating(t *testing.T) {
 	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
-	app.generating = true
-	app.genAssistant = "a"
+	app.chatID = "c"
+	app.jobs = map[string]*genJob{"a": {chatID: "c", assistant: "a"}}
 	app.history = api.History{
 		CurrentID: "a",
 		Messages: map[string]api.Message{
