@@ -22,6 +22,17 @@ func TestSelectedTextSkipsSidebarColumns(t *testing.T) {
 	}
 }
 
+func TestSelectedTextDropsScreenPadding(t *testing.T) {
+	line1 := "    mkdir -p ~/.config/btop/themes" + strings.Repeat(" ", 40)
+	line2 := "    cp /path/to/gruvbox_dark.theme ~/.config/btop/themes/" + strings.Repeat(" ", 20)
+	content := line1 + "\n" + line2
+	got := selectedText(content, cell{line: 0, col: 0}, cell{line: 1, col: len(line2) - 1})
+	want := "    mkdir -p ~/.config/btop/themes\n    cp /path/to/gruvbox_dark.theme ~/.config/btop/themes/"
+	if got != want {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestSelectedTextIncludesCellUnderCursor(t *testing.T) {
 	got := selectedText("error", cell{line: 0, col: 0}, cell{line: 0, col: 4})
 	if got != "error" {

@@ -116,6 +116,12 @@ func cutEnd(col, width int) int {
 	return col + 1
 }
 
+// dropScreenPadding removes spaces the renderer adds so a wrapped line fills
+// the screen. The document ends at the newline, not at that padding.
+func dropScreenPadding(line string, start, end int) string {
+	return strings.TrimRight(ansi.Strip(ansi.Cut(line, start, end)), " ")
+}
+
 func ordered(a, b cell) (cell, cell) {
 	if a.line > b.line || (a.line == b.line && a.col > b.col) {
 		return b, a
@@ -152,10 +158,11 @@ func selectedText(content string, a, b cell) string {
 		if end < start {
 			end = start
 		}
+		piece := dropScreenPadding(line, start, end)
 		if i > a.line {
 			out.WriteByte('\n')
 		}
-		out.WriteString(ansi.Strip(ansi.Cut(line, start, end)))
+		out.WriteString(piece)
 	}
 	return out.String()
 }
@@ -177,6 +184,10 @@ func markSelection(content string, a, b cell) string {
 		if i == b.line {
 			end = cutEnd(b.col, width)
 		}
+		if end <= start {
+			continue
+		}
+		end = start + ansi.StringWidth(dropScreenPadding(line, start, end))
 		if end <= start {
 			continue
 		}
@@ -246,7 +257,7 @@ func sourceText(content string, blocks []string, lineBlock []int, a, b cell) str
 		if plain.Len() > 0 {
 			plain.WriteByte('\n')
 		}
-		plain.WriteString(ansi.Strip(ansi.Cut(line, start, end)))
+		plain.WriteString(dropScreenPadding(line, start, end))
 	}
 	flush()
 	return strings.Join(parts, "\n\n")
