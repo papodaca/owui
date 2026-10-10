@@ -188,23 +188,34 @@ func (m App) sidebarView() string {
 			title = "untitled"
 		}
 		limit := sidebarWidth - 2
-		prefix := ""
+		spin := ""
 		if m.jobByChat(e.ID) != nil {
-			prefix = m.spin.View() + " "
-			limit -= ansi.StringWidth(prefix)
+			spin = m.spin.View()
+			limit -= ansi.StringWidth(spin) + 1
 			if limit < 1 {
 				limit = 1
 			}
 		}
-		line := prefix + clip(title, limit)
-		row := lipgloss.NewStyle().Inline(true)
+		title = clip(title, limit)
+		// The spinner's own colour ends in a reset, which would cut the row
+		// style short, so it is drawn beside the styled title, not inside it.
 		switch {
 		case idx == m.selected && m.focus == focusSidebar:
-			row = m.styles.sel.Inline(true)
+			if spin != "" {
+				title = ansi.Strip(spin) + " " + title
+			}
+			b.WriteString(m.styles.sel.Inline(true).Render(title))
 		case e.ID == m.chatID:
-			row = m.styles.accent.Inline(true)
+			if spin != "" {
+				b.WriteString(spin + " ")
+			}
+			b.WriteString(m.styles.accent.Inline(true).Render(title))
+		default:
+			if spin != "" {
+				b.WriteString(spin + " ")
+			}
+			b.WriteString(title)
 		}
-		b.WriteString(row.Render(line))
 		b.WriteString("\n")
 	}
 	style := lipgloss.NewStyle().Width(sidebarWidth-1).Height(m.height).Border(lipgloss.NormalBorder(), false, true, false, false)
