@@ -241,7 +241,7 @@ func TestTranscriptListsOutputToolCalls(t *testing.T) {
 	}
 	look := strings.Index(plain, "I'll look it up")
 	call := strings.Index(plain, "tool_web_search_post")
-	answer := strings.Index(plain, "not canceled")
+	answer := strings.Index(plain, "Rick and Morty")
 	if look < 0 || call < look || answer < call {
 		t.Fatalf("order:\n%s", plain)
 	}
