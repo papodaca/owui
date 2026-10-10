@@ -220,6 +220,7 @@ func (m *App) slash(text string) (bool, tea.Cmd) {
 	switch cmd {
 	case "/help":
 		m.overlay = overlayHelp
+		m.helpScroll = 0
 	case "/new":
 		mark := m.newChat()
 		m.input.SetValue("")

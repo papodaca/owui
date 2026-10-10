@@ -113,6 +113,7 @@ type App struct {
 	overlay       int
 	pick          picker
 	featureCursor int
+	helpScroll    int
 	rename        textinput.Model
 	confirmDelete bool
 

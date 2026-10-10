@@ -56,16 +56,25 @@ func (m App) loginView() string {
 }
 
 func (m App) mainView() string {
-	main := lipgloss.JoinVertical(lipgloss.Left,
+	screen := lipgloss.JoinVertical(lipgloss.Left,
 		m.headerLine(),
-		m.transcriptView(),
+		m.vp.View(),
 		m.bottomBar(),
 		m.input.View(),
 	)
-	if !m.showSidebar {
-		return main
+	if m.showSidebar {
+		screen = lipgloss.JoinHorizontal(lipgloss.Top, m.sidebarView(), screen)
 	}
-	return lipgloss.JoinHorizontal(lipgloss.Top, m.sidebarView(), main)
+	if m.overlay == overlayNone {
+		return screen
+	}
+	box := m.modalView()
+	x := max(0, (m.width-lipgloss.Width(box))/2)
+	y := max(0, (m.height-lipgloss.Height(box))/2)
+	return lipgloss.NewCompositor(
+		lipgloss.NewLayer(screen),
+		lipgloss.NewLayer(box).X(x).Y(y).Z(1),
+	).Render()
 }
 
 func (m App) paneWidth() int {
@@ -96,13 +105,6 @@ func (m App) headerLine() string {
 		line += "  " + who
 	}
 	return m.styles.title.Render(clip(line, m.paneWidth()))
-}
-
-func (m App) transcriptView() string {
-	if m.overlay != overlayNone {
-		return m.overlayView()
-	}
-	return m.vp.View()
 }
 
 // bottomBar shows only what is switched on, plus any status or error.
@@ -212,70 +214,134 @@ func (m App) sidebarView() string {
 	return style.Render(b.String())
 }
 
-func (m App) overlayView() string {
-	w := m.vp.Width()
-	if w < 10 {
-		w = m.paneWidth()
+// modal is what one overlay box shows. Body rows scroll: around cursor when it
+// is set, otherwise from scroll.
+type modal struct {
+	title  string
+	head   []string
+	body   []string
+	cursor int
+	scroll int
+	footer string
+}
+
+func (m App) modalView() string {
+	md := m.modalContent()
+	w := m.modalWidth()
+	rows := m.modalRows(len(md.head))
+	start, end := modalWindow(len(md.body), rows, md.cursor, md.scroll)
+
+	lines := []string{m.styles.title.Render(clip(md.title, w))}
+	for _, h := range md.head {
+		lines = append(lines, clip(h, w))
 	}
+	for i := start; i < end; i++ {
+		line := clip(md.body[i], w)
+		if i == md.cursor {
+			plain := ansi.Strip(line)
+			line = m.styles.sel.Render(plain + strings.Repeat(" ", max(0, w-ansi.StringWidth(plain))))
+		}
+		lines = append(lines, line)
+	}
+	footer := md.footer
+	if len(md.body) > rows {
+		footer = fmt.Sprintf("%d-%d of %d  %s", start+1, end, len(md.body), footer)
+	}
+	lines = append(lines, m.styles.dim.Render(clip(footer, w)))
+
+	body := lipgloss.NewStyle().Width(w).Render(strings.Join(lines, "\n"))
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("6")).
+		Padding(0, 1).
+		Render(body)
+}
+
+func (m App) modalWidth() int {
+	return max(16, min(60, m.width-6))
+}
+
+// modalRows is how many body rows fit, after the border, title, head lines,
+// footer and a row of margin above and below. Long lists scroll past 12.
+func (m App) modalRows(head int) int {
+	return max(1, min(12, m.height-6-head))
+}
+
+func modalWindow(n, rows, cursor, scroll int) (start, end int) {
+	if n <= rows {
+		return 0, n
+	}
+	if cursor >= 0 {
+		start = cursor - rows/2
+	} else {
+		start = scroll
+	}
+	start = max(0, min(start, n-rows))
+	return start, start + rows
+}
+
+func (m App) modalContent() modal {
 	switch m.overlay {
 	case overlayHelp:
-		return m.helpText(w)
+		return modal{title: "keys", body: helpLines, cursor: -1, scroll: m.helpScroll, footer: "↑↓ scroll  esc close"}
 	case overlayFeatures:
-		return m.featuresText(w)
+		return m.featuresModal()
 	case overlayRename:
-		return "rename\n" + m.rename.View() + "\n" + m.styles.dim.Render("enter save, esc cancel")
+		in := m.rename
+		in.SetWidth(m.modalWidth() - 3)
+		return modal{title: "rename chat", head: []string{in.View()}, cursor: -1, footer: "enter save  esc cancel"}
 	case overlayModel:
-		return m.pickerText("model", false, w)
+		return m.pickerModal("model", false, "enter pick  esc close")
 	case overlayTools:
-		return m.pickerText("tools  space toggles, enter saves", true, w)
+		return m.pickerModal("tools", true, "space toggle  enter save  esc cancel")
 	case overlayTerminal:
-		return m.pickerText("terminal", false, w)
+		return m.pickerModal("terminal", false, "enter pick  esc close")
 	case overlaySearch:
-		return m.pickerText("find a chat    enter opens it", false, w)
+		return m.pickerModal("find a chat", false, "enter open  esc close")
 	default:
-		return ""
+		return modal{cursor: -1}
 	}
 }
 
-func (m App) helpText(w int) string {
-	lines := []string{
-		"keys",
-		"enter          send",
-		"alt+enter      newline",
-		"esc            stop the reply",
-		"ctrl+n         new chat",
-		"ctrl+k         chats sidebar",
-		"ctrl+f         fuzzy find a chat",
-		"ctrl+e         this client or all chats",
-		"ctrl+p         model",
-		"ctrl+o         web, code, image, memory",
-		"ctrl+t         tools and MCP servers",
-		"ctrl+g         terminal",
-		"tab            move focus",
-		"pgup/pgdown   scroll the chat",
-		"mouse wheel   scroll the chat",
-		"drag          copy the chat text",
-		"alt+drag      copy the markdown",
-		"",
-		"commands",
-		"/web /code /image /memory     toggle, or add on/off",
-		"/model /tools /terminal",
-		"/terminal off",
-		"/new /help",
-		"",
-		"A finished reply rings the bell, or names the chat under Herdr.",
-		"It stays quiet while this window has focus.",
-		"",
-		"Chats started here are stored on the server.",
-		"The sidebar lists only those. The web UI shows them too.",
-		"",
-		"Code interpreter and a terminal cannot both be on.",
-		"esc closes this",
-	}
-	return clipLines(lines, w)
+// helpScrollMax keeps the help text from scrolling past its last line.
+func (m App) helpScrollMax() int {
+	return max(0, len(helpLines)-m.modalRows(0))
 }
 
-func (m App) featuresText(w int) string {
+var helpLines = []string{
+	"enter          send",
+	"alt+enter      newline",
+	"esc            stop the reply",
+	"ctrl+n         new chat",
+	"ctrl+k         chats sidebar",
+	"ctrl+f         fuzzy find a chat",
+	"ctrl+e         this client or all chats",
+	"ctrl+p         model",
+	"ctrl+o         web, code, image, memory",
+	"ctrl+t         tools and MCP servers",
+	"ctrl+g         terminal",
+	"tab            move focus",
+	"pgup/pgdown   scroll the chat",
+	"mouse wheel   scroll the chat",
+	"drag          copy the chat text",
+	"alt+drag      copy the markdown",
+	"",
+	"commands",
+	"/web /code /image /memory     toggle, or add on/off",
+	"/model /tools /terminal",
+	"/terminal off",
+	"/new /help",
+	"",
+	"A finished reply rings the bell, or names the chat under Herdr.",
+	"It stays quiet while this window has focus.",
+	"",
+	"Chats started here are stored on the server.",
+	"The sidebar lists only those. The web UI shows them too.",
+	"",
+	"Code interpreter and a terminal cannot both be on.",
+}
+
+func (m App) featuresModal() modal {
 	rows := []struct {
 		label string
 		on    bool
@@ -286,40 +352,38 @@ func (m App) featuresText(w int) string {
 		{"image generation", m.features.ImageGeneration, "image"},
 		{"memory", m.features.Memory, "memory"},
 	}
-	lines := []string{"features  space toggles, esc closes", ""}
-	for i, row := range rows {
+	md := modal{title: "features", cursor: m.featureCursor, footer: "space toggle  esc close"}
+	for _, row := range rows {
 		mark := "[ ]"
 		if row.on {
 			mark = "[x]"
 		}
 		line := mark + " " + row.label
 		if ok, why := m.featureEnabled(row.name); !ok {
-			line += "  " + why
+			line += "  " + m.styles.dim.Render(why)
 		}
-		line = clip(line, w)
-		if i == m.featureCursor {
-			line = m.styles.sel.Render(line)
-		}
-		lines = append(lines, line)
+		md.body = append(md.body, line)
 	}
 	if m.terminalID != "" {
-		lines = append(lines, "", "terminal is on, so code interpreter stays off")
+		md.body = append(md.body, "", m.styles.dim.Render("terminal is on, so code interpreter stays off"))
 	}
-	return strings.Join(lines, "\n")
+	return md
 }
 
-func (m App) pickerText(title string, multi bool, w int) string {
-	lines := []string{title}
+func (m App) pickerModal(title string, multi bool, footer string) modal {
+	md := modal{title: title, cursor: m.pick.cursor, footer: footer}
 	if m.pick.filter != "" {
-		lines = append(lines, "/"+m.pick.filter)
+		md.head = []string{m.styles.accent.Render("/" + m.pick.filter)}
+	} else {
+		md.head = []string{m.styles.dim.Render("type to filter")}
 	}
-	lines = append(lines, "")
 	items := m.pick.visible()
 	if len(items) == 0 {
-		lines = append(lines, m.styles.dim.Render("nothing here"))
-		return clipLines(lines, w)
+		md.body = []string{m.styles.dim.Render("nothing here")}
+		md.cursor = -1
+		return md
 	}
-	for i, it := range items {
+	for _, it := range items {
 		label := it.label
 		if label == "" {
 			label = it.id
@@ -332,29 +396,11 @@ func (m App) pickerText(title string, multi bool, w int) string {
 			label = box + " " + label
 		}
 		if it.note != "" {
-			label += "  " + it.note
+			label += "  " + m.styles.dim.Render(it.note)
 		}
-		label = clip(label, w)
-		if i == m.pick.cursor {
-			label = m.styles.sel.Render(label)
-		}
-		lines = append(lines, label)
+		md.body = append(md.body, label)
 	}
-	return strings.Join(lines, "\n")
-}
-
-func clipLines(lines []string, w int) string {
-	if w < 8 {
-		w = 8
-	}
-	var b strings.Builder
-	for i, line := range lines {
-		if i > 0 {
-			b.WriteByte('\n')
-		}
-		b.WriteString(clip(line, w))
-	}
-	return b.String()
+	return md
 }
 
 func clip(s string, n int) string {

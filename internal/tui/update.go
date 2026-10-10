@@ -605,10 +605,25 @@ func (m *App) updateOverlay(msg tea.KeyPressMsg) tea.Cmd {
 	}
 	switch m.overlay {
 	case overlayHelp:
-		if msg.String() == "enter" || msg.String() == "q" {
+		page := m.modalRows(0)
+		switch msg.String() {
+		case "enter", "q":
 			m.overlay = overlayNone
 			return m.input.Focus()
+		case "up", "k":
+			m.helpScroll--
+		case "down", "j":
+			m.helpScroll++
+		case "pgup":
+			m.helpScroll -= page
+		case "pgdown", "space", " ":
+			m.helpScroll += page
+		case "home", "g":
+			m.helpScroll = 0
+		case "end", "G":
+			m.helpScroll = m.helpScrollMax()
 		}
+		m.helpScroll = max(0, min(m.helpScroll, m.helpScrollMax()))
 		return nil
 	case overlayFeatures:
 		switch msg.String() {
