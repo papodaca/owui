@@ -383,6 +383,21 @@ func TestSendWhileAnotherChatWorks(t *testing.T) {
 	}
 }
 
+func TestCodeBlockIsNotIndented(t *testing.T) {
+	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
+	app.vp.SetWidth(80)
+	src := "```\nmkdir -p ~/.config/btop/themes\ncp /path/to/gruvbox_dark.theme ~/.config/btop/themes/\n```"
+	out := ansi.Strip(app.renderMarkdown("id", src))
+	for _, line := range strings.Split(out, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
+			t.Fatalf("indented:\n%q", out)
+		}
+	}
+}
+
 func TestGenerateTitleOnlyOnFirstTurn(t *testing.T) {
 	first := []api.CompletionMessage{{Role: "user", Content: "hi"}}
 	if !generateTitle(first) {

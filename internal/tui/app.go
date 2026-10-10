@@ -967,6 +967,11 @@ func markdownStyle() ansi.StyleConfig {
 	style.H4.Prefix = ""
 	style.H5.Prefix = ""
 	style.H6.Prefix = ""
+	// The dark style indents the document and then indents code again.
+	// Together that is one tab, which is not part of the document.
+	none := uint(0)
+	style.Document.Margin = &none
+	style.CodeBlock.Margin = &none
 	return style
 }
 
