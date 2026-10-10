@@ -138,6 +138,9 @@ func (m App) bottomBar() string {
 			parts = append(parts, m.chip(c.label, c.effective))
 		}
 	}
+	if n := len(m.images); n > 0 {
+		parts = append(parts, m.styles.on.Render(fmt.Sprintf(" img %d ", n)))
+	}
 	if n := len(m.toolIDs); n > 0 {
 		parts = append(parts, m.styles.on.Render(fmt.Sprintf(" tools %d ", n)))
 	}
@@ -324,6 +327,7 @@ var helpLines = []string{
 	"alt+enter      newline",
 	"esc            stop the reply",
 	"ctrl+n         new chat",
+	"ctrl+v         paste an image from the clipboard",
 	"ctrl+k         chats sidebar",
 	"ctrl+f         fuzzy find a chat",
 	"ctrl+e         this client or all chats",

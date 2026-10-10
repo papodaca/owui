@@ -119,6 +119,7 @@ type App struct {
 	helpScroll    int
 	rename        textinput.Model
 	confirmDelete bool
+	images        []composerImage
 
 	bootHeld    *bootMsg
 	splashReady bool
@@ -924,6 +925,15 @@ func (m *App) transcript() string {
 			}
 			w.curID = -1
 			w.WriteString(m.spin.View())
+			wrote = true
+		}
+		if n := countImages(msg.Files); n > 0 {
+			if wrote {
+				w.curID = -1
+				w.WriteString("\n")
+			}
+			w.curID = -1
+			w.WriteString(m.styles.dim.Render(imageLabel(n)))
 		}
 		w.curID = -1
 		w.WriteString("\n")

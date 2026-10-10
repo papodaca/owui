@@ -525,6 +525,119 @@ func TestClipUsesDisplayWidth(t *testing.T) {
 	}
 }
 
+func TestCtrlVPastesClipboardImage(t *testing.T) {
+	png := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0x00}
+	prev := readClipboard
+	readClipboard = func() (string, []byte, error) { return "image/png", png, nil }
+	t.Cleanup(func() { readClipboard = prev })
+
+	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
+	app.phase = phaseMain
+	app.focus = focusComposer
+	key := tea.KeyPressMsg{Code: 'v', Mod: tea.ModCtrl}
+	if key.String() != "ctrl+v" {
+		t.Fatalf("key = %q", key.String())
+	}
+	next, cmd := app.Update(key)
+	if cmd == nil {
+		t.Fatal("expected a clipboard read")
+	}
+	next, _ = next.(App).Update(cmd())
+	got := next.(App)
+	if len(got.images) != 1 || got.images[0].File.Name != "image.png" {
+		t.Fatalf("images = %#v", got.images)
+	}
+	if !strings.HasPrefix(got.images[0].File.URL, "data:image/png;base64,") {
+		t.Fatalf("url = %s", got.images[0].File.URL)
+	}
+	if got.input.Value() != "[ image 1 ]" {
+		t.Fatalf("composer = %q", got.input.Value())
+	}
+	got.width = 80
+	got.showSidebar = false
+	plain := ansi.Strip(got.bottomBar())
+	if !strings.Contains(plain, "img 1") {
+		t.Fatalf("bar = %q", plain)
+	}
+}
+
+func TestBackspaceDropsImageAtCursor(t *testing.T) {
+	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
+	app.phase = phaseMain
+	app.focus = focusComposer
+	app.input.SetValue("what is in this image [ image 1 ] [ image 2 ]")
+	app.images = []composerImage{
+		{N: 1, File: api.Attachment{Type: "image", URL: "data:image/png;base64,aa", Name: "image.png"}},
+		{N: 2, File: api.Attachment{Type: "image", URL: "data:image/png;base64,bb", Name: "image.png"}},
+	}
+	key := tea.KeyPressMsg{Code: tea.KeyBackspace}
+	if key.String() != "backspace" {
+		t.Fatalf("key = %q", key.String())
+	}
+	next, _ := app.Update(key)
+	got := next.(App)
+	if got.input.Value() != "what is in this image [ image 1 ]" {
+		t.Fatalf("composer = %q", got.input.Value())
+	}
+	if len(got.images) != 1 || got.images[0].N != 1 {
+		t.Fatalf("images = %#v", got.images)
+	}
+}
+
+func TestDeleteDropsImageBeforeCursor(t *testing.T) {
+	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
+	app.phase = phaseMain
+	app.focus = focusComposer
+	app.input.SetValue("see [ image 1 ] please")
+	app.images = []composerImage{
+		{N: 1, File: api.Attachment{Type: "image", URL: "data:image/png;base64,aa", Name: "image.png"}},
+	}
+	placeCursor(&app.input, len([]rune("see ")))
+	key := tea.KeyPressMsg{Code: tea.KeyDelete}
+	if key.String() != "delete" {
+		t.Fatalf("key = %q", key.String())
+	}
+	next, _ := app.Update(key)
+	got := next.(App)
+	if got.input.Value() != "see please" {
+		t.Fatalf("composer = %q", got.input.Value())
+	}
+	if len(got.images) != 0 {
+		t.Fatal("image still attached")
+	}
+}
+
+func TestSendKeepsImageOnUserMessage(t *testing.T) {
+	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
+	app.client = api.New("http://127.0.0.1:9", "k")
+	app.modelID = "m"
+	app.chatID = "b"
+	app.history = api.History{
+		CurrentID: "u",
+		Messages: map[string]api.Message{
+			"u": {ID: "u", Role: "user", Content: "hi", ChildrenIDs: api.IDList{}},
+		},
+	}
+	app.input.SetValue("what is in this image [ image 1 ]")
+	app.images = []composerImage{{N: 1, File: api.Attachment{Type: "image", URL: "data:image/png;base64,aa", Name: "image.png"}}}
+	if cmd := app.send(); cmd == nil {
+		t.Fatal("did not send")
+	}
+	if len(app.images) != 0 {
+		t.Fatal("image still waiting")
+	}
+	user := app.history.Messages[app.history.Messages[app.history.CurrentID].ParentID]
+	if len(user.Files) != 1 || user.Files[0].URL != "data:image/png;base64,aa" {
+		t.Fatalf("files = %#v", user.Files)
+	}
+	if user.Content != "what is in this image" {
+		t.Fatalf("prompt = %q", user.Content)
+	}
+	if !strings.Contains(app.transcript(), "1 image") {
+		t.Fatalf("transcript = %q", app.transcript())
+	}
+}
+
 func TestPasteAPIKey(t *testing.T) {
 	app := newApp(config.File{URL: "http://127.0.0.1:8080", Path: t.TempDir() + "/config.toml"}, nil)
 	app.authMode = authAPIKey

@@ -92,6 +92,16 @@ type Message struct {
 	Done        *bool           `json:"done,omitempty"`
 	Sources     json.RawMessage `json:"sources,omitempty"`
 	Output      json.RawMessage `json:"output,omitempty"`
+	// Files carries pasted images. The server copies type "image" entries
+	// into the model request as image_url parts.
+	Files []Attachment `json:"files,omitempty"`
+}
+
+// Attachment is one file on a chat message.
+type Attachment struct {
+	Type string `json:"type"`
+	URL  string `json:"url"`
+	Name string `json:"name,omitempty"`
 }
 
 // History is the message tree. currentId is camelCase. The web UI ignores current_id.

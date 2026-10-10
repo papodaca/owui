@@ -112,6 +112,9 @@ func (m App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.PasteMsg:
 		return m, m.paste(msg)
+	case pasteImageMsg:
+		m.applyPastedImage(msg)
+		return m, nil
 	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" {
 			return m, m.requestQuit()
@@ -289,6 +292,7 @@ func (m *App) paste(msg tea.PasteMsg) tea.Cmd {
 	if m.overlay == overlayNone && m.focus == focusComposer {
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
+		m.dropMissingImages()
 		return cmd
 	}
 	return nil
@@ -406,6 +410,13 @@ func (m *App) updateMain(msg tea.KeyPressMsg) tea.Cmd {
 	case "ctrl+f":
 		m.openChatSearch()
 		return nil
+	case "ctrl+v":
+		// Text paste arrives as a PasteMsg from the terminal. An image never
+		// does, so this key reads the clipboard the way other agents do.
+		if m.focus == focusComposer {
+			return m.pasteClipboardImage()
+		}
+		return nil
 	case "ctrl+e":
 		return m.toggleChatScope()
 	case "pgup", "pgdown", "ctrl+up", "ctrl+down":
@@ -437,12 +448,18 @@ func (m *App) updateMain(msg tea.KeyPressMsg) tea.Cmd {
 			m.stickToBottom = true
 			return m.send()
 		}
+		if (msg.String() == "backspace" || msg.String() == "delete") && !m.input.HasSelection() {
+			if m.removeImageToken(msg.String() == "backspace") {
+				return nil
+			}
+		}
 		if m.promptScroll(msg) {
 			m.scrollTranscript(msg)
 			return nil
 		}
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
+		m.dropMissingImages()
 		return cmd
 	}
 }

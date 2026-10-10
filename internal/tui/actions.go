@@ -58,6 +58,7 @@ func (m *App) newChat() tea.Cmd {
 	m.chatID = ""
 	m.chatTitle = ""
 	m.history = api.History{}
+	m.images = nil
 	m.stickToBottom = true
 	m.status = ""
 	m.errText = ""
@@ -67,12 +68,16 @@ func (m *App) newChat() tea.Cmd {
 }
 
 func (m *App) send() tea.Cmd {
-	text := strings.TrimSpace(m.input.Value())
-	if text == "" {
+	raw := strings.TrimSpace(m.input.Value())
+	files := m.filesInPrompt(raw)
+	text := promptWithoutImages(raw)
+	if text == "" && len(files) == 0 {
 		return nil
 	}
-	if handled, cmd := m.slash(text); handled {
-		return cmd
+	if text != "" {
+		if handled, cmd := m.slash(text); handled {
+			return cmd
+		}
 	}
 	if m.openJob() != nil {
 		m.errText = "a reply is still running"
@@ -97,10 +102,17 @@ func (m *App) send() tea.Cmd {
 		parentID *string
 		chatID   string
 	)
+	title := text
+	if title == "" {
+		title = "image"
+	}
 	if m.chatID == "" {
 		created = true
 		var chat api.ChatBody
-		turn, chat = chattree.CreateBody(chattree.TitleFromPrompt(text), m.modelID, modelName, text, now)
+		turn, chat = chattree.CreateBody(chattree.TitleFromPrompt(title), m.modelID, modelName, text, now)
+		turn.User.Files = files
+		chat.Messages[0] = turn.User
+		chat.History.Messages[turn.UserID] = turn.User
 		body = chat
 		m.history = *chat.History
 		m.chatTitle = chat.Title
@@ -111,6 +123,7 @@ func (m *App) send() tea.Cmd {
 		// the server replaces a message object wholesale, so a partial update
 		// would wipe the previous reply.
 		turn, _ = chattree.AppendPatch(prev, m.modelID, modelName, text, now)
+		turn.User.Files = files
 		parentID = &prev
 		if msg, ok := m.history.Messages[prev]; ok {
 			msg.ChildrenIDs = append(api.IDList{}, msg.ChildrenIDs...)
@@ -135,6 +148,7 @@ func (m *App) send() tea.Cmd {
 	}
 	m.jobs[job.assistant] = job
 	m.input.SetValue("")
+	m.images = nil
 	m.syncTranscript()
 
 	messages := chattree.CompletionMessages(m.history)
