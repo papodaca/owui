@@ -505,11 +505,19 @@ func (m *App) openChatID(id string) tea.Cmd {
 	m.filter = ""
 	m.stickToBottom = true
 	client := m.client
+	index := m.index
+	key := m.storeKey()
 	prev := m.chatID
 	fetch := func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		rec, err := client.GetChat(ctx, id)
+		if api.IsNotFound(err) {
+			if index != nil {
+				_ = index.Remove(key, id)
+			}
+			return deletedMsg{id: id, gone: true}
+		}
 		return loadedMsg{rec: rec, why: "open", err: err}
 	}
 	if prev != "" && prev != id {
@@ -736,14 +744,84 @@ func (m *App) stop() tea.Cmd {
 
 func (m *App) onEvent(ev socket.Event) tea.Cmd {
 	if ev.Local {
-		if ev.Type == "socket:disconnected" && ev.Err != "" {
-			m.status = "socket down"
+		if ev.Type == "socket:disconnected" {
+			m.sockDropped = true
+			if ev.Err != "" {
+				m.status = "socket down"
+			}
 		}
-		if ev.Type == "socket:connected" && m.status == "socket down" {
-			m.status = ""
+		if ev.Type == "socket:connected" {
+			if m.status == "socket down" {
+				m.status = ""
+			}
+			if m.sockDropped && m.showAll {
+				// Chats made while the socket was down sent no event.
+				m.sockDropped = false
+				return m.requestChatList()
+			}
 		}
 		return nil
 	}
+	if m.showAll && chatListChanged(ev) {
+		return tea.Batch(m.requestChatList(), m.handleEvent(ev))
+	}
+	return m.handleEvent(ev)
+}
+
+// chatListChanged reports events after which the server's chat list differs:
+// a chat was created (chat:list, sent only by newer servers), titled, or got
+// a finished reply, which moves it to the top. The server also sends chat:list
+// when any client marks a chat read; that one carries last_read_at.
+func chatListChanged(ev socket.Event) bool {
+	switch ev.Type {
+	case "chat:list":
+		var data struct {
+			LastReadAt *float64 `json:"last_read_at"`
+		}
+		_ = json.Unmarshal(ev.Data, &data)
+		return data.LastReadAt == nil
+	case "chat:title":
+		return true
+	case "replace", "chat:completion":
+		var data struct {
+			Done bool `json:"done"`
+		}
+		_ = json.Unmarshal(ev.Data, &data)
+		return data.Done
+	}
+	return false
+}
+
+// requestChatList refetches the sidebar for the current scope. A request made
+// while one is in flight runs once that one lands, so a burst of events costs
+// at most two fetches.
+func (m *App) requestChatList() tea.Cmd {
+	if m.listFetching {
+		m.listDirty = true
+		return nil
+	}
+	var cmd tea.Cmd
+	if m.showAll {
+		cmd = m.fetchAllChats()
+	} else {
+		cmd = m.refreshChats()
+	}
+	m.listFetching = cmd != nil
+	return cmd
+}
+
+// chatListLanded finishes a fetch and starts the one that was asked for
+// while it ran.
+func (m *App) chatListLanded() tea.Cmd {
+	m.listFetching = false
+	if !m.listDirty {
+		return nil
+	}
+	m.listDirty = false
+	return m.requestChatList()
+}
+
+func (m *App) handleEvent(ev socket.Event) tea.Cmd {
 	switch ev.Type {
 	case "chat:title":
 		var data struct {
@@ -911,6 +989,8 @@ type deletedMsg struct {
 	id      string
 	current string
 	err     error
+	// gone is set when the chat was deleted somewhere else.
+	gone bool
 }
 
 func (m *App) renameSelected() tea.Cmd {

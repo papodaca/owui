@@ -80,13 +80,16 @@ type App struct {
 	toolIDs    []string
 	terminalID string
 
-	chats       []store.Entry
-	showAll     bool
-	filter      string
-	filtering   bool
-	selected    int
-	focus       int
-	showSidebar bool
+	chats        []store.Entry
+	showAll      bool
+	listFetching bool
+	listDirty    bool
+	sockDropped  bool
+	filter       string
+	filtering    bool
+	selected     int
+	focus        int
+	showSidebar  bool
 
 	chatID    string
 	chatTitle string
@@ -406,7 +409,7 @@ func (m *App) applyBoot(msg bootMsg) tea.Cmd {
 	var cmds []tea.Cmd
 	cmds = append(cmds, m.input.Focus(), waitEvent(m.sock.Events), m.refreshChats(), m.persist())
 	if m.showAll {
-		cmds = append(cmds, m.fetchAllChats())
+		cmds = append(cmds, m.requestChatList())
 	}
 	return tea.Batch(cmds...)
 }
@@ -488,7 +491,7 @@ func (m *App) toggleChatScope() tea.Cmd {
 	m.selected = 0
 	if m.showAll {
 		m.status = "all chats"
-		return tea.Batch(m.fetchAllChats(), m.persist())
+		return tea.Batch(m.requestChatList(), m.persist())
 	}
 	if m.index != nil {
 		m.chats = m.index.List(m.storeKey())
@@ -1052,6 +1055,25 @@ func (m *App) visibleChats() []store.Entry {
 		}
 	}
 	return out
+}
+
+// replaceChats swaps in a fresh list and keeps the same chat selected, so a
+// new chat arriving at the top does not move the highlight.
+func (m *App) replaceChats(entries []store.Entry) {
+	var selID string
+	if items := m.visibleChats(); m.selected >= 0 && m.selected < len(items) {
+		selID = items[m.selected].ID
+	}
+	m.chats = entries
+	if selID != "" {
+		for i, e := range m.visibleChats() {
+			if e.ID == selID {
+				m.selected = i
+				break
+			}
+		}
+	}
+	m.clampSelected()
 }
 
 func (m *App) clampSelected() {

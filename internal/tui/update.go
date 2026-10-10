@@ -23,8 +23,14 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.FocusMsg:
+		was := m.termFocused
 		m.termFocused = true
-		return m, nil
+		if was || m.phase != phaseMain {
+			return m, nil
+		}
+		// The server sends no event when a chat is deleted elsewhere, so
+		// catch up when the user comes back from the web UI.
+		return m, m.requestChatList()
 	case tea.BlurMsg:
 		m.termFocused = false
 		return m, nil
@@ -143,23 +149,21 @@ func (m App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.startSplash()
 	case chatsMsg:
 		if !m.showAll {
-			m.chats = msg.entries
-			m.clampSelected()
+			m.replaceChats(msg.entries)
 		}
 		if msg.err != nil && m.errText == "" {
 			m.errText = msg.err.Error()
 		}
-		return m, nil
+		return m, m.chatListLanded()
 	case allChatsMsg:
 		if m.showAll {
 			if msg.err != nil {
 				m.errText = msg.err.Error()
 			} else {
-				m.chats = msg.entries
-				m.clampSelected()
+				m.replaceChats(msg.entries)
 			}
 		}
-		return m, nil
+		return m, m.chatListLanded()
 	case sentMsg:
 		return m, m.applySent(msg)
 	case loadedMsg:
@@ -194,6 +198,9 @@ func (m App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.dropVisible(msg.id)
 		m.clampSelected()
+		if msg.gone {
+			m.status = "that chat was deleted"
+		}
 		return m, nil
 	case renamedMsg:
 		if msg.err != nil {
