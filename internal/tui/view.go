@@ -59,8 +59,7 @@ func (m App) mainView() string {
 	main := lipgloss.JoinVertical(lipgloss.Left,
 		m.headerLine(),
 		m.transcriptView(),
-		m.statusLine(),
-		m.featureBar(),
+		m.bottomBar(),
 		m.input.View(),
 	)
 	if !m.showSidebar {
@@ -106,7 +105,8 @@ func (m App) transcriptView() string {
 	return m.vp.View()
 }
 
-func (m App) statusLine() string {
+// bottomBar shows only what is switched on, plus any status or error.
+func (m App) bottomBar() string {
 	w := m.paneWidth()
 	if m.quitArmed {
 		return m.styles.err.Render(clip(quitHint, w))
@@ -114,52 +114,49 @@ func (m App) statusLine() string {
 	if m.confirmDelete {
 		return m.styles.err.Render(clip("delete this chat? y or any other key cancels", w))
 	}
-	if m.errText != "" {
-		return m.styles.err.Render(clip(m.errText, w))
+	var parts []string
+	switch {
+	case m.errText != "":
+		parts = append(parts, m.styles.err.Render(m.errText))
+	case m.status != "":
+		parts = append(parts, m.styles.status.Render(m.status))
 	}
-	if m.status != "" {
-		return m.styles.status.Render(clip(m.status, w))
-	}
-	return m.styles.help.Render(clip("enter send  alt-enter newline  esc stop  ^n new  ^f find  ^e all/client  ^k chats  ^p model  ^o features  ^t tools  ^g terminal", w))
-}
-
-func (m App) featureBar() string {
 	eff := m.effectiveFeatures()
-	parts := []string{
-		m.chip("web", m.features.WebSearch, eff.WebSearch, "web"),
-		m.chip("code", m.features.CodeInterpreter, eff.CodeInterpreter, "code"),
-		m.chip("image", m.features.ImageGeneration, eff.ImageGeneration, "image"),
-		m.chip("mem", m.features.Memory, eff.Memory, "memory"),
+	for _, c := range []struct {
+		label     string
+		wanted    bool
+		effective bool
+	}{
+		{"web", m.features.WebSearch, eff.WebSearch},
+		{"code", m.features.CodeInterpreter, eff.CodeInterpreter},
+		{"image", m.features.ImageGeneration, eff.ImageGeneration},
+		{"mem", m.features.Memory, eff.Memory},
+	} {
+		if c.wanted {
+			parts = append(parts, m.chip(c.label, c.effective))
+		}
 	}
-	tools := "tools"
 	if n := len(m.toolIDs); n > 0 {
-		tools = fmt.Sprintf("tools %d", n)
+		parts = append(parts, m.styles.on.Render(fmt.Sprintf(" tools %d ", n)))
 	}
-	parts = append(parts, m.styles.off.Render(tools))
-	if m.terminalID == "" {
-		parts = append(parts, m.styles.off.Render("terminal"))
-	} else {
-		parts = append(parts, m.styles.on.Render(clip("term "+m.terminalID, 24)))
+	if m.terminalID != "" {
+		parts = append(parts, m.styles.on.Render(" "+clip("term "+m.terminalID, 24)+" "))
 	}
 	name := m.modelName()
 	if name == "" {
-		name = "no model"
+		name = "no model  ^p"
 	}
 	parts = append(parts, m.styles.dim.Render(clip(name, 28)))
-	return strings.Join(parts, "  ")
+	return clip(strings.Join(parts, "  "), w)
 }
 
-func (m App) chip(label string, wanted, effective bool, feature string) string {
-	if _, why := m.featureEnabled(feature); why != "" && !effective {
-		return m.styles.disabled.Render(label)
-	}
-	if effective && wanted {
+// chip draws a feature that is switched on. One the server or model cannot
+// use right now is dimmed.
+func (m App) chip(label string, effective bool) string {
+	if effective {
 		return m.styles.on.Render(" " + label + " ")
 	}
-	if wanted && !effective {
-		return m.styles.disabled.Render(label)
-	}
-	return m.styles.off.Render(label)
+	return m.styles.disabled.Render(label)
 }
 
 func (m App) sidebarView() string {

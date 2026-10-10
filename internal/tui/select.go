@@ -92,7 +92,7 @@ func (m App) inComposer(y int) bool {
 	if h < 1 {
 		h = 1
 	}
-	return y >= 1+h+2
+	return y >= 1+h+1
 }
 
 func (m *App) showSelection() {

@@ -207,10 +207,15 @@ func newComposer() textarea.Model {
 	ta := textarea.New()
 	ta.ShowLineNumbers = false
 	ta.Placeholder = "message, or /help"
-	ta.Prompt = "> "
+	ta.Prompt = ""
 	ta.CharLimit = 0
+	ta.DynamicHeight = true
+	ta.MinHeight = 1
 	ta.MaxHeight = 8
-	ta.SetHeight(4)
+	ta.SetHeight(1)
+	st := ta.Styles()
+	st.Focused.Base = st.Focused.Base.Background(st.Focused.CursorLine.GetBackground())
+	ta.SetStyles(st)
 	km := ta.KeyMap
 	km.InsertNewline = key.NewBinding(key.WithKeys("alt+enter"))
 	km.LineNext = key.NewBinding(key.WithKeys("down"))
@@ -677,16 +682,9 @@ func (m *App) layout() {
 	if mainW < 20 {
 		mainW = 20
 	}
-	composerH := 4
-	// header, status, feature bar, composer
-	transcriptH := m.height - composerH - 3
-	if transcriptH < 1 {
-		transcriptH = 1
-	}
 	m.vp.SetWidth(mainW)
-	m.vp.SetHeight(transcriptH)
 	m.input.SetWidth(mainW - 1)
-	m.input.SetHeight(composerH)
+	m.vp.SetHeight(m.transcriptHeight())
 	w := mainW - 4
 	if w < 20 {
 		w = 20
@@ -696,6 +694,30 @@ func (m *App) layout() {
 	m.emailIn.SetWidth(w)
 	m.passIn.SetWidth(w)
 	m.rename.SetWidth(w)
+}
+
+// transcriptHeight is what is left after the header, the bottom bar and the
+// composer, which grows with its text.
+func (m App) transcriptHeight() int {
+	h := m.height - m.input.Height() - 2
+	if h < 1 {
+		h = 1
+	}
+	return h
+}
+
+// fitComposer gives the transcript the rows the composer does not use, keeping
+// the newest line in view when the composer grows over it.
+func (m *App) fitComposer() {
+	h := m.transcriptHeight()
+	if m.vp.Height() == h {
+		return
+	}
+	bottom := m.vp.AtBottom()
+	m.vp.SetHeight(h)
+	if bottom || m.stickToBottom {
+		m.vp.GotoBottom()
+	}
 }
 
 // lineWriter records which markdown block each transcript line came from.

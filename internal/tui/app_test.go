@@ -25,6 +25,37 @@ func TestLoginRenders(t *testing.T) {
 	}
 }
 
+func TestComposerGrowsWithText(t *testing.T) {
+	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
+	app.phase = phaseMain
+	app.focus = focusComposer
+	app.input.Focus()
+	next, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 30})
+	app = next.(App)
+	if h := app.input.Height(); h != 1 {
+		t.Fatalf("empty composer height = %d", h)
+	}
+	if h := app.vp.Height(); h != 27 {
+		t.Fatalf("transcript height = %d", h)
+	}
+	for _, k := range []tea.KeyPressMsg{
+		{Code: 'a', Text: "a"},
+		{Code: tea.KeyEnter, Mod: tea.ModAlt},
+		{Code: 'b', Text: "b"},
+		{Code: tea.KeyEnter, Mod: tea.ModAlt},
+		{Code: 'c', Text: "c"},
+	} {
+		next, _ = app.Update(k)
+		app = next.(App)
+	}
+	if h := app.input.Height(); h != 3 {
+		t.Fatalf("three line composer height = %d", h)
+	}
+	if h := app.vp.Height(); h != 25 {
+		t.Fatalf("transcript height = %d", h)
+	}
+}
+
 func TestSplashInsteadOfLogin(t *testing.T) {
 	app := newApp(config.File{
 		URL:    "http://127.0.0.1:8080",
@@ -135,8 +166,7 @@ func TestPageUpScrollsSidebarNotTranscript(t *testing.T) {
 		app.chats[i] = store.Entry{ID: strings.Repeat("x", i+1), Title: "chat"}
 	}
 	app.selected = 30
-	app.vp.SetWidth(20)
-	app.vp.SetHeight(4)
+	app.layout()
 	app.vp.SetContent(strings.Repeat("line\n", 40))
 	app.vp.GotoBottom()
 	chatAt := app.vp.YOffset()
@@ -166,7 +196,7 @@ func TestWheelScrollsSidebarWhenFocused(t *testing.T) {
 		app.chats[i] = store.Entry{ID: strings.Repeat("x", i+1), Title: "chat"}
 	}
 	app.selected = 30
-	app.vp.SetHeight(4)
+	app.layout()
 	app.vp.SetContent(strings.Repeat("line\n", 40))
 	app.vp.GotoBottom()
 	chatAt := app.vp.YOffset()

@@ -12,6 +12,15 @@ import (
 )
 
 func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.update(msg)
+	if a, ok := next.(App); ok && a.phase == phaseMain && a.height > 0 {
+		a.fitComposer()
+		return a, cmd
+	}
+	return next, cmd
+}
+
+func (m App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.FocusMsg:
 		m.termFocused = true
