@@ -104,6 +104,18 @@ func (m *App) showSelection() {
 	m.vp.SetYOffset(y)
 }
 
+// cutEnd is the exclusive column just after the cell under the pointer.
+// ansi.Cut stops before its right argument, so the cell itself has to be included.
+func cutEnd(col, width int) int {
+	if col < 0 {
+		col = 0
+	}
+	if col >= width {
+		return width
+	}
+	return col + 1
+}
+
 func ordered(a, b cell) (cell, cell) {
 	if a.line > b.line || (a.line == b.line && a.col > b.col) {
 		return b, a
@@ -135,7 +147,7 @@ func selectedText(content string, a, b cell) string {
 			start = min(max(a.col, 0), width)
 		}
 		if i == b.line {
-			end = min(max(b.col, 0), width)
+			end = cutEnd(b.col, width)
 		}
 		if end < start {
 			end = start
@@ -163,7 +175,7 @@ func markSelection(content string, a, b cell) string {
 			start = min(max(a.col, 0), width)
 		}
 		if i == b.line {
-			end = min(max(b.col, 0), width)
+			end = cutEnd(b.col, width)
 		}
 		if end <= start {
 			continue
@@ -226,7 +238,7 @@ func sourceText(content string, blocks []string, lineBlock []int, a, b cell) str
 			start = min(max(a.col, 0), width)
 		}
 		if i == b.line {
-			end = min(max(b.col, 0), width)
+			end = cutEnd(b.col, width)
 		}
 		if end < start {
 			end = start

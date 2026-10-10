@@ -12,12 +12,19 @@ import (
 
 func TestSelectedTextSkipsSidebarColumns(t *testing.T) {
 	content := "alpha beta\nsecond line"
-	got := selectedText(content, cell{line: 0, col: 0}, cell{line: 0, col: 5})
+	got := selectedText(content, cell{line: 0, col: 0}, cell{line: 0, col: 4})
 	if got != "alpha" {
 		t.Fatalf("got %q", got)
 	}
-	got = selectedText(content, cell{line: 0, col: 6}, cell{line: 1, col: 6})
+	got = selectedText(content, cell{line: 0, col: 6}, cell{line: 1, col: 5})
 	if got != "beta\nsecond" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestSelectedTextIncludesCellUnderCursor(t *testing.T) {
+	got := selectedText("error", cell{line: 0, col: 0}, cell{line: 0, col: 4})
+	if got != "error" {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -43,7 +50,7 @@ func TestDragInTranscriptCopiesChatText(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("drag did not copy")
 	}
-	if strings.TrimSpace(selectedText(app.rendered, cell{0, 0}, cell{0, 5})) != "hello" {
+	if strings.TrimSpace(selectedText(app.rendered, cell{0, 0}, cell{0, 4})) != "hello" {
 		t.Fatal("selection was not the chat text")
 	}
 }
