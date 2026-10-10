@@ -1,6 +1,10 @@
 package socket
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
 
 func TestParseOpen(t *testing.T) {
 	p, ok := ParseOpen(`0{"sid":"abc","upgrades":[],"pingInterval":25000,"pingTimeout":20000}`)
@@ -23,6 +27,30 @@ func TestParseSocketEvent(t *testing.T) {
 	}
 	if string(ev.Data) == "" || ev.Data[0] != '{' {
 		t.Fatalf("data = %s", ev.Data)
+	}
+}
+
+func TestMarkReadPacket(t *testing.T) {
+	pkt := string(MarkReadPacket("c1"))
+	if !strings.HasPrefix(pkt, "42") {
+		t.Fatal(pkt)
+	}
+	var frame []json.RawMessage
+	if err := json.Unmarshal([]byte(pkt[2:]), &frame); err != nil || len(frame) != 2 {
+		t.Fatal(pkt)
+	}
+	var name string
+	if json.Unmarshal(frame[0], &name) != nil || name != "events:chat" {
+		t.Fatal(name)
+	}
+	var body struct {
+		ChatID string `json:"chat_id"`
+		Data   struct {
+			Type string `json:"type"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(frame[1], &body) != nil || body.ChatID != "c1" || body.Data.Type != "last_read_at" {
+		t.Fatalf("%+v", body)
 	}
 }
 

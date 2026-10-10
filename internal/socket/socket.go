@@ -34,8 +34,10 @@ type Client struct {
 
 	Events chan Event
 
-	mu  sync.RWMutex
-	sid string
+	mu      sync.RWMutex
+	sid     string
+	conn    *websocket.Conn
+	writeMu sync.Mutex
 }
 
 func New(baseURL, token string) *Client {
@@ -57,6 +59,55 @@ func (c *Client) setSID(sid string) {
 	c.sid = sid
 	c.mu.Unlock()
 }
+
+func (c *Client) setConn(conn *websocket.Conn) {
+	c.mu.Lock()
+	c.conn = conn
+	c.mu.Unlock()
+}
+
+func (c *Client) clearConn(conn *websocket.Conn) {
+	c.mu.Lock()
+	if c.conn == conn {
+		c.conn = nil
+	}
+	c.mu.Unlock()
+}
+
+func (c *Client) writePacket(ctx context.Context, pkt []byte) error {
+	c.mu.RLock()
+	conn := c.conn
+	c.mu.RUnlock()
+	if conn == nil {
+		return errNotConnected
+	}
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	return conn.Write(ctx, websocket.MessageText, pkt)
+}
+
+// MarkRead tells the server this chat was opened, the same signal the web UI
+// sends so the sidebar unread light goes out.
+func (c *Client) MarkRead(ctx context.Context, chatID string) error {
+	if chatID == "" {
+		return nil
+	}
+	return c.writePacket(ctx, MarkReadPacket(chatID))
+}
+
+// MarkReadPacket is the Socket.IO event the server handles as last_read_at.
+func MarkReadPacket(chatID string) []byte {
+	payload, _ := json.Marshal([]any{
+		"events:chat",
+		map[string]any{
+			"chat_id": chatID,
+			"data":    map[string]string{"type": "last_read_at"},
+		},
+	})
+	return append([]byte("42"), payload...)
+}
+
+var errNotConnected = errStringType("socket is not connected")
 
 // Run dials until ctx is cancelled. Call it in a goroutine.
 func (c *Client) Run(ctx context.Context) {
@@ -141,8 +192,10 @@ func (c *Client) session(ctx context.Context) error {
 		return errBadOpen
 	}
 	c.setSID(open.SID)
+	c.setConn(conn)
+	defer c.clearConn(conn)
 	auth, _ := json.Marshal(map[string]string{"token": c.Token})
-	if err := conn.Write(ctx, websocket.MessageText, []byte("40"+string(auth))); err != nil {
+	if err := c.writePacket(ctx, []byte("40"+string(auth))); err != nil {
 		return err
 	}
 	c.emit(Event{Name: "local", Type: "socket:connected", Local: true})
@@ -158,7 +211,7 @@ func (c *Client) session(ctx context.Context) error {
 		}
 		switch pkt[0] {
 		case '2':
-			if err := conn.Write(ctx, websocket.MessageText, []byte("3")); err != nil {
+			if err := c.writePacket(ctx, []byte("3")); err != nil {
 				return err
 			}
 		case '1':

@@ -359,8 +359,7 @@ func (m *App) updateMain(msg tea.KeyPressMsg) tea.Cmd {
 	}
 	switch msg.String() {
 	case "ctrl+n":
-		m.newChat()
-		return nil
+		return m.newChat()
 	case "ctrl+k":
 		// First press shows and focuses the list. The next press hides it.
 		if m.focus == focusSidebar && m.showSidebar {
@@ -557,9 +556,9 @@ func (m *App) updateSidebar(msg tea.KeyPressMsg) tea.Cmd {
 	case "enter":
 		return m.openSelected()
 	case "n":
-		m.newChat()
+		mark := m.newChat()
 		m.focus = focusComposer
-		return m.input.Focus()
+		return tea.Batch(mark, m.input.Focus())
 	case "d":
 		if len(m.visibleChats()) > 0 {
 			m.confirmDelete = true

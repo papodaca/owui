@@ -52,7 +52,8 @@ func (m *App) submitLogin() tea.Cmd {
 
 type signedInMsg struct{ user api.User }
 
-func (m *App) newChat() {
+func (m *App) newChat() tea.Cmd {
+	prev := m.chatID
 	m.viewToken++
 	m.chatID = ""
 	m.chatTitle = ""
@@ -62,6 +63,7 @@ func (m *App) newChat() {
 	m.errText = ""
 	m.confirmDelete = false
 	m.syncTranscript()
+	return m.markRead(prev)
 }
 
 func (m *App) send() tea.Cmd {
@@ -135,9 +137,10 @@ func (m *App) send() tea.Cmd {
 	m.input.SetValue("")
 	m.syncTranscript()
 
+	messages := chattree.CompletionMessages(m.history)
 	req := api.CompletionRequest{
 		Model:      m.modelID,
-		Messages:   chattree.CompletionMessages(m.history),
+		Messages:   messages,
 		Stream:     true,
 		ID:         turn.AssistantID,
 		SessionID:  sessionID(m.sock),
@@ -145,9 +148,7 @@ func (m *App) send() tea.Cmd {
 		ToolIDs:    append([]string{}, m.toolIDs...),
 		TerminalID: m.terminalID,
 		BackgroundTasks: api.BackgroundTasks{
-			TitleGeneration:    true,
-			TagsGeneration:     false,
-			FollowUpGeneration: false,
+			TitleGeneration: generateTitle(messages),
 		},
 		Variables:   variables(),
 		ParentID:    parentID,
@@ -189,6 +190,16 @@ func (m *App) send() tea.Cmd {
 	return work
 }
 
+// generateTitle matches the web client: a name is requested only while the
+// completion is still the opening turn, one user message or a system message
+// plus that user message. Later rounds leave the title alone.
+func generateTitle(msgs []api.CompletionMessage) bool {
+	if len(msgs) == 1 {
+		return true
+	}
+	return len(msgs) == 2 && msgs[0].Role == "system" && msgs[1].Role == "user"
+}
+
 func (m App) spinTick() tea.Cmd {
 	return func() tea.Msg { return m.spin.Tick() }
 }
@@ -210,7 +221,9 @@ func (m *App) slash(text string) (bool, tea.Cmd) {
 	case "/help":
 		m.overlay = overlayHelp
 	case "/new":
-		m.newChat()
+		mark := m.newChat()
+		m.input.SetValue("")
+		return true, mark
 	case "/web":
 		m.input.SetValue("")
 		return true, m.setFeature("web", toggle(args, m.features.WebSearch))
@@ -491,11 +504,29 @@ func (m *App) openChatID(id string) tea.Cmd {
 	m.filter = ""
 	m.stickToBottom = true
 	client := m.client
-	return func() tea.Msg {
+	prev := m.chatID
+	fetch := func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		rec, err := client.GetChat(ctx, id)
 		return loadedMsg{rec: rec, why: "open", err: err}
+	}
+	if prev != "" && prev != id {
+		return tea.Batch(m.markRead(prev), fetch)
+	}
+	return fetch
+}
+
+func (m *App) markRead(id string) tea.Cmd {
+	if id == "" || m.sock == nil {
+		return nil
+	}
+	sock := m.sock
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = sock.MarkRead(ctx, id)
+		return nil
 	}
 }
 
@@ -541,7 +572,7 @@ func (m *App) applyLoaded(msg loadedMsg) tea.Cmd {
 	if m.chatID != "" {
 		m.retitleVisible(m.chatID, m.chatTitle)
 	}
-	return cmd
+	return tea.Batch(cmd, m.markRead(m.chatID))
 }
 
 func (m *App) schedulePoll(j *genJob) tea.Cmd {

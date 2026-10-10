@@ -383,6 +383,28 @@ func TestSendWhileAnotherChatWorks(t *testing.T) {
 	}
 }
 
+func TestGenerateTitleOnlyOnFirstTurn(t *testing.T) {
+	first := []api.CompletionMessage{{Role: "user", Content: "hi"}}
+	if !generateTitle(first) {
+		t.Fatal("first turn")
+	}
+	withSystem := []api.CompletionMessage{
+		{Role: "system", Content: "be brief"},
+		{Role: "user", Content: "hi"},
+	}
+	if !generateTitle(withSystem) {
+		t.Fatal("system plus user")
+	}
+	followUp := []api.CompletionMessage{
+		{Role: "user", Content: "hi"},
+		{Role: "assistant", Content: "hello"},
+		{Role: "user", Content: "more"},
+	}
+	if generateTitle(followUp) {
+		t.Fatal("follow-up should keep the existing title")
+	}
+}
+
 func TestClickSidebarTitleOpensChat(t *testing.T) {
 	app := newApp(config.File{Path: t.TempDir() + "/config.toml"}, nil)
 	app.phase = phaseMain
