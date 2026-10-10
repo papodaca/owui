@@ -612,9 +612,18 @@ func (m *App) schedulePoll(j *genJob) tea.Cmd {
 		return nil
 	}
 	id, asst, seq := j.chatID, j.assistant, j.seq
-	return tea.Tick(time.Second, func(time.Time) tea.Msg {
+	return tea.Tick(pollEvery(j), func(time.Time) tea.Msg {
 		return pollMsg{id: id, assistant: asst, seq: seq}
 	})
+}
+
+// pollEvery is the gap between saved-chat checks. The socket streams the
+// reply and polling only backs it up, so it is slow while events arrive.
+func pollEvery(j *genJob) time.Duration {
+	if time.Since(j.lastEvent) < 10*time.Second {
+		return 5 * time.Second
+	}
+	return time.Second
 }
 
 func (m *App) poll(msg pollMsg) tea.Cmd {
@@ -712,6 +721,10 @@ func mergeHistory(local, remote api.History) api.History {
 		lm, ok := local.Messages[id]
 		if ok && len(lm.Content) > len(rm.Content) {
 			rm.Content = lm.Content
+		}
+		// The socket can be ahead of what the server has saved so far.
+		if ok && outputTextLen(lm.Output) > outputTextLen(rm.Output) {
+			rm.Output = lm.Output
 		}
 		remote.Messages[id] = rm
 	}
@@ -900,6 +913,8 @@ func (m *App) handleEvent(ev socket.Event) tea.Cmd {
 		m.status = ""
 	case "message":
 		m.appendContent(ev, true)
+	case "response:completion":
+		m.applyResponseEvent(ev)
 	case "replace", "chat:completion":
 		m.appendContent(ev, false)
 		var data struct {
@@ -923,14 +938,26 @@ func (m *App) handleEvent(ev socket.Event) tea.Cmd {
 	return nil
 }
 
-func (m *App) appendContent(ev socket.Event, delta bool) {
+// streamTarget is the on-screen message a streamed event writes to. Any event
+// for a reply we follow counts as a sign the socket is delivering it.
+func (m *App) streamTarget(ev socket.Event) (api.Message, bool) {
 	if ev.MessageID == "" {
-		return
+		return api.Message{}, false
+	}
+	if j := m.jobs[ev.MessageID]; j != nil {
+		j.lastEvent = time.Now()
 	}
 	if ev.ChatID != "" && m.chatID != "" && ev.ChatID != m.chatID {
-		return
+		return api.Message{}, false
 	}
 	msg, ok := m.history.Messages[ev.MessageID]
+	return msg, ok
+}
+
+// appendContent applies the older text events (message, replace) and
+// chat:completion, which carries either text or a snapshot of the output.
+func (m *App) appendContent(ev socket.Event, delta bool) {
+	msg, ok := m.streamTarget(ev)
 	if !ok {
 		return
 	}
@@ -938,24 +965,108 @@ func (m *App) appendContent(ev socket.Event, delta bool) {
 	if err := json.Unmarshal(ev.Data, &raw); err != nil {
 		return
 	}
-	contentRaw, ok := raw["content"]
-	if !ok {
+	changed := false
+	if out, ok := raw["output"]; ok && len(out) > 0 && out[0] == '[' {
+		msg.Output = append(json.RawMessage(nil), out...)
+		changed = true
+	}
+	if contentRaw, ok := raw["content"]; ok {
+		var text string
+		if err := json.Unmarshal(contentRaw, &text); err == nil {
+			if delta {
+				msg.Content += api.Content(text)
+			} else {
+				msg.Content = api.Content(text)
+			}
+			changed = true
+		}
+	}
+	if !changed {
 		return
-	}
-	var text string
-	if err := json.Unmarshal(contentRaw, &text); err != nil {
-		return
-	}
-	if delta {
-		msg.Content += api.Content(text)
-	} else {
-		msg.Content = api.Content(text)
-	}
-	if m.history.Messages == nil {
-		m.history.Messages = map[string]api.Message{}
 	}
 	m.history.Messages[ev.MessageID] = msg
 	m.syncTranscript()
+}
+
+// applyResponseEvent applies a response:completion event, which servers from
+// 0.11 send for each batch of streamed text and each finished output item.
+func (m *App) applyResponseEvent(ev socket.Event) {
+	msg, ok := m.streamTarget(ev)
+	if !ok {
+		return
+	}
+	var d struct {
+		Type         string         `json:"type"`
+		OutputIndex  *int           `json:"output_index"`
+		ContentIndex int            `json:"content_index"`
+		ItemID       string         `json:"item_id"`
+		Delta        *string        `json:"delta"`
+		Item         map[string]any `json:"item"`
+	}
+	if err := json.Unmarshal(ev.Data, &d); err != nil || d.OutputIndex == nil || *d.OutputIndex < 0 {
+		return
+	}
+	var items []map[string]any
+	_ = json.Unmarshal(msg.Output, &items)
+	idx := *d.OutputIndex
+	switch d.Type {
+	case "response.output_item.added", "response.output_item.done":
+		if d.Item == nil {
+			return
+		}
+		items = growOutput(items, idx, "")
+		items[idx] = d.Item
+	case "response.output_text.delta", "response.reasoning_text.delta":
+		if d.Delta == nil {
+			return
+		}
+		itemType, partType := "message", "output_text"
+		if d.Type == "response.reasoning_text.delta" {
+			itemType, partType = "reasoning", "reasoning_text"
+		}
+		items = growOutput(items, idx, itemType)
+		item := items[idx]
+		if item["id"] == nil && d.ItemID != "" {
+			item["id"] = d.ItemID
+		}
+		content, _ := item["content"].([]any)
+		for len(content) <= d.ContentIndex {
+			content = append(content, map[string]any{"type": partType, "text": ""})
+		}
+		part, ok := content[d.ContentIndex].(map[string]any)
+		if !ok {
+			part = map[string]any{"type": partType, "text": ""}
+		}
+		text, _ := part["text"].(string)
+		part["text"] = text + *d.Delta
+		content[d.ContentIndex] = part
+		item["content"] = content
+	default:
+		return
+	}
+	out, err := json.Marshal(items)
+	if err != nil {
+		return
+	}
+	msg.Output = out
+	m.history.Messages[ev.MessageID] = msg
+	m.syncTranscript()
+}
+
+// growOutput pads the output list so index idx exists. A new last item gets
+// itemType; any gap before it is filled with empty items.
+func growOutput(items []map[string]any, idx int, itemType string) []map[string]any {
+	for len(items) <= idx {
+		item := map[string]any{}
+		if len(items) == idx && itemType != "" {
+			item["type"] = itemType
+		}
+		items = append(items, item)
+	}
+	if items[idx] == nil {
+		items[idx] = map[string]any{"type": itemType}
+	}
+	return items
 }
 
 func errorText(raw json.RawMessage) string {

@@ -81,6 +81,22 @@ func partsFromOutput(raw json.RawMessage) ([]contentPart, bool) {
 	return parts, true
 }
 
+// outputTextLen is how much reply text an output list holds, to tell which of
+// two copies of the same message is further along.
+func outputTextLen(raw json.RawMessage) int {
+	var items []map[string]any
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return 0
+	}
+	n := 0
+	for _, item := range items {
+		if t, _ := item["type"].(string); t == "message" {
+			n += len(outputMessageText(item))
+		}
+	}
+	return n
+}
+
 func outputMessageText(item map[string]any) string {
 	switch c := item["content"].(type) {
 	case string:

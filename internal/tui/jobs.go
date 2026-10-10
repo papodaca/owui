@@ -15,6 +15,8 @@ type genJob struct {
 	chime     bool
 	// adopted is a reply started elsewhere and picked up when its chat opened.
 	adopted bool
+	// lastEvent is when the socket last sent anything for this reply.
+	lastEvent time.Time
 }
 
 func (m *App) ensureJobs() {
