@@ -13,6 +13,8 @@ type genJob struct {
 	seq       int
 	token     int
 	chime     bool
+	// adopted is a reply started elsewhere and picked up when its chat opened.
+	adopted bool
 }
 
 func (m *App) ensureJobs() {

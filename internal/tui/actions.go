@@ -581,7 +581,30 @@ func (m *App) applyLoaded(msg loadedMsg) tea.Cmd {
 	if m.chatID != "" {
 		m.retitleVisible(m.chatID, m.chatTitle)
 	}
+	if msg.why == "open" {
+		cmd = tea.Batch(cmd, m.adoptRunning())
+	}
 	return tea.Batch(cmd, m.markRead(m.chatID))
+}
+
+// adoptRunning follows a reply that is still being written but was not started
+// here, such as one from the web UI, so the chat keeps updating once opened.
+func (m *App) adoptRunning() tea.Cmd {
+	cur, ok := m.history.Messages[m.history.CurrentID]
+	if m.chatID == "" || !ok || cur.Role != "assistant" || cur.Done == nil || *cur.Done {
+		return nil
+	}
+	if m.jobByChat(m.chatID) != nil {
+		return nil
+	}
+	m.ensureJobs()
+	first := len(m.jobs) == 0
+	j := &genJob{chatID: m.chatID, assistant: cur.ID, started: time.Now(), seq: 1, adopted: true}
+	m.jobs[j.assistant] = j
+	if first {
+		return tea.Batch(m.schedulePoll(j), m.spinTick())
+	}
+	return m.schedulePoll(j)
 }
 
 func (m *App) schedulePoll(j *genJob) tea.Cmd {
@@ -661,6 +684,10 @@ func (m *App) applyPoll(msg pollResult) tea.Cmd {
 		}
 	}
 	if msg.tasksErr == nil && len(msg.tasks) == 0 {
+		if j.adopted {
+			// No task on the server: the reply died without being marked done.
+			return m.finish(j)
+		}
 		if msg, ok := hist.Messages[j.assistant]; ok && msg.Content != "" {
 			j.chime = true
 			return m.finish(j)
