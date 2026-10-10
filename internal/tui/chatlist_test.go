@@ -5,10 +5,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/usr1/owui/internal/api"
-	"github.com/usr1/owui/internal/config"
-	"github.com/usr1/owui/internal/socket"
-	"github.com/usr1/owui/internal/store"
+	"github.com/papodaca/owui/internal/api"
+	"github.com/papodaca/owui/internal/config"
+	"github.com/papodaca/owui/internal/socket"
+	"github.com/papodaca/owui/internal/store"
 )
 
 func TestChatListEventFetchesAndCoalesces(t *testing.T) {

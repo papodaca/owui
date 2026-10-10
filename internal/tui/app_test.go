@@ -8,9 +8,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/usr1/owui/internal/api"
-	"github.com/usr1/owui/internal/config"
-	"github.com/usr1/owui/internal/store"
+	"github.com/papodaca/owui/internal/api"
+	"github.com/papodaca/owui/internal/config"
+	"github.com/papodaca/owui/internal/store"
 )
 
 func TestLoginRenders(t *testing.T) {
@@ -65,13 +65,28 @@ func TestSplashInsteadOfLogin(t *testing.T) {
 	if app.phase != phaseSplash {
 		t.Fatalf("phase = %d", app.phase)
 	}
+	prev := release
+	release = "v1.2.3"
+	t.Cleanup(func() { release = prev })
 	next, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 32})
 	body := next.(App).View().Content
 	if !strings.Contains(body, "connecting") {
 		t.Fatal("splash missing connecting")
 	}
+	if !strings.Contains(body, "v1.2.3") {
+		t.Fatal("splash missing release tag")
+	}
 	if strings.Contains(body, "api key") {
 		t.Fatal("login form shown during connect")
+	}
+}
+
+func TestReleaseTagFallback(t *testing.T) {
+	prev := release
+	release = ""
+	t.Cleanup(func() { release = prev })
+	if got := releaseTag(); got != "dev" {
+		t.Fatalf("release tag = %q", got)
 	}
 }
 

@@ -5,12 +5,17 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/usr1/owui/internal/config"
-	"github.com/usr1/owui/internal/store"
-	"github.com/usr1/owui/internal/tui"
+	"github.com/papodaca/owui/internal/config"
+	"github.com/papodaca/owui/internal/store"
+	"github.com/papodaca/owui/internal/tui"
 )
 
+// version is the release tag shown on the splash screen.
+// Set it at link time with -X main.version=v1.0.0.
+var version string
+
 func main() {
+	tui.SetRelease(version)
 	url := flag.String("url", "", "Open WebUI base URL (overrides the config file and OWUI_URL)")
 	cfgPath := flag.String("config", "", "config file path (default $XDG_CONFIG_HOME/owui/config.toml)")
 	flag.Parse()

@@ -9,7 +9,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/google/uuid"
-	"github.com/usr1/owui/internal/api"
+	"github.com/papodaca/owui/internal/api"
 )
 
 func newID() string { return uuid.NewString() }

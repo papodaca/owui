@@ -1,4 +1,4 @@
-module github.com/usr1/owui
+module github.com/papodaca/owui
 
 go 1.27.1
 

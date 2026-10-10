@@ -3,8 +3,8 @@ package tui
 import (
 	"testing"
 
-	"github.com/usr1/owui/internal/api"
-	"github.com/usr1/owui/internal/config"
+	"github.com/papodaca/owui/internal/api"
+	"github.com/papodaca/owui/internal/config"
 )
 
 func openedChat(done bool) loadedMsg {

@@ -7,8 +7,8 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/usr1/owui/internal/socket"
-	"github.com/usr1/owui/internal/store"
+	"github.com/papodaca/owui/internal/socket"
+	"github.com/papodaca/owui/internal/store"
 )
 
 func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {

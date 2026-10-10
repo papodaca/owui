@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/usr1/owui/internal/api"
-	"github.com/usr1/owui/internal/config"
+	"github.com/papodaca/owui/internal/api"
+	"github.com/papodaca/owui/internal/config"
 )
 
 func TestHerdrNotifyNamesTheChat(t *testing.T) {

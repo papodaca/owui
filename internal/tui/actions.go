@@ -8,9 +8,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/usr1/owui/internal/api"
-	"github.com/usr1/owui/internal/chattree"
-	"github.com/usr1/owui/internal/socket"
+	"github.com/papodaca/owui/internal/api"
+	"github.com/papodaca/owui/internal/chattree"
+	"github.com/papodaca/owui/internal/socket"
 )
 
 func (m *App) submitLogin() tea.Cmd {

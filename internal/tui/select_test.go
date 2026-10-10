@@ -6,8 +6,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/usr1/owui/internal/api"
-	"github.com/usr1/owui/internal/config"
+	"github.com/papodaca/owui/internal/api"
+	"github.com/papodaca/owui/internal/config"
 )
 
 func TestSelectedTextSkipsSidebarColumns(t *testing.T) {

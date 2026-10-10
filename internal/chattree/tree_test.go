@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/x/ansi"
-	"github.com/usr1/owui/internal/api"
+	"github.com/papodaca/owui/internal/api"
 )
 
 func TestCreateBodyTree(t *testing.T) {

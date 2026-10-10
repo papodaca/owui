@@ -8,7 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/usr1/owui/internal/config"
+	"github.com/papodaca/owui/internal/config"
 )
 
 func TestModalDrawsOverChat(t *testing.T) {

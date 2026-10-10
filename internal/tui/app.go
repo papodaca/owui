@@ -19,11 +19,11 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/google/uuid"
 
-	"github.com/usr1/owui/internal/api"
-	"github.com/usr1/owui/internal/chattree"
-	"github.com/usr1/owui/internal/config"
-	"github.com/usr1/owui/internal/socket"
-	"github.com/usr1/owui/internal/store"
+	"github.com/papodaca/owui/internal/api"
+	"github.com/papodaca/owui/internal/chattree"
+	"github.com/papodaca/owui/internal/config"
+	"github.com/papodaca/owui/internal/socket"
+	"github.com/papodaca/owui/internal/store"
 )
 
 const (
