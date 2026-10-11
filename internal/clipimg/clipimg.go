@@ -121,6 +121,45 @@ func output(name string, args ...string) ([]byte, error) {
 	return out, nil
 }
 
+// pasteboardScript asks the general pasteboard for one image type and writes
+// its bytes to the path passed as the script's first argument.
+const pasteboardScript = `use framework "Foundation"
+
+on run argv
+	set outPath to item 1 of argv
+	set pb to current application's NSPasteboard's generalPasteboard()
+	set typeList to current application's NSArray's arrayWithArray:{"public.png", "public.jpeg", "com.compuserve.gif", "org.webmproject.webp", "image/png", "image/jpeg", "image/gif", "image/webp"}
+	set chosen to pb's availableTypeFromArray:typeList
+	if chosen is missing value then
+		return "none"
+	end if
+	set imgData to pb's dataForType:chosen
+	if imgData is missing value then
+		error "pasteboard returned no bytes"
+	end if
+	set ok to (imgData's writeToFile:outPath atomically:true)
+	if ok is false then
+		error "pasteboard write failed"
+	end if
+	return chosen as text
+end run
+`
+
+func pasteboardMIME(token string) string {
+	switch strings.TrimSpace(token) {
+	case "public.png", "image/png":
+		return "image/png"
+	case "public.jpeg", "image/jpeg":
+		return "image/jpeg"
+	case "com.compuserve.gif", "image/gif":
+		return "image/gif"
+	case "org.webmproject.webp", "image/webp":
+		return "image/webp"
+	default:
+		return ""
+	}
+}
+
 func pickMIME(list string) string {
 	have := map[string]bool{}
 	for _, line := range strings.Split(list, "\n") {
