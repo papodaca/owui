@@ -4,6 +4,7 @@ package clipimg
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,13 +18,13 @@ func init() {
 
 func execOsascript(script, path string) (string, error) {
 	const bin = "/usr/bin/osascript"
-	if _, err := os.Stat(bin); err != nil {
-		return "", fmt.Errorf("paste needs osascript")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, "-e", script, path)
 	out, err := cmd.Output()
+	if errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("paste needs osascript")
+	}
 	if ctx.Err() != nil {
 		return "", fmt.Errorf("clipboard timed out")
 	}

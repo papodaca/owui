@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -71,6 +72,9 @@ func readClipboard() ([]byte, error) {
 }
 
 func readDarwinClipboard() ([]byte, error) {
+	if runPasteboard == nil {
+		return nil, errors.New("paste needs osascript")
+	}
 	f, err := os.CreateTemp("", "owui-paste-")
 	if err != nil {
 		return nil, err
@@ -86,9 +90,6 @@ func readDarwinClipboard() ([]byte, error) {
 	}
 	defer os.Remove(path)
 
-	if runPasteboard == nil {
-		return nil, errors.New("paste needs osascript")
-	}
 	token, err := runPasteboard(pasteboardScript, path)
 	if err != nil {
 		return nil, err
@@ -96,7 +97,12 @@ func readDarwinClipboard() ([]byte, error) {
 	if pasteboardMIME(token) == "" {
 		return nil, ErrNone
 	}
-	data, err := os.ReadFile(path)
+	in, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer in.Close()
+	data, err := io.ReadAll(io.LimitReader(in, int64(maxBytes)+1))
 	if err != nil {
 		return nil, err
 	}

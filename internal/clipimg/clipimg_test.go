@@ -182,6 +182,21 @@ func TestDarwinMissingOsascript(t *testing.T) {
 	}
 }
 
+func TestDarwinUnsetRunner(t *testing.T) {
+	prevDarwin := darwinClipboard
+	prevRun := runPasteboard
+	darwinClipboard = true
+	runPasteboard = nil
+	t.Cleanup(func() {
+		darwinClipboard = prevDarwin
+		runPasteboard = prevRun
+	})
+	_, _, err := Read()
+	if err == nil || errors.Is(err, ErrTool) || err.Error() != "paste needs osascript" {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestDarwinTempRemovedOnFailure(t *testing.T) {
 	var path string
 	stubPasteboard(t, func(script, dest string) (string, error) {
