@@ -83,6 +83,13 @@ func TestPasteboardScript(t *testing.T) {
 	}
 }
 
+func requireTempGone(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("temp file remains: %v", err)
+	}
+}
+
 func stubPasteboard(t *testing.T, run func(script, path string) (string, error)) {
 	t.Helper()
 	prevDarwin := darwinClipboard
@@ -112,9 +119,7 @@ func TestDarwinNone(t *testing.T) {
 	if path == "" {
 		t.Fatal("runner was not called")
 	}
-	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
-		t.Fatalf("temp file remains: %v", statErr)
-	}
+	requireTempGone(t, path)
 }
 
 func TestDarwinPNG(t *testing.T) {
@@ -144,9 +149,7 @@ func TestDarwinPNG(t *testing.T) {
 	if string(data) != string(png) {
 		t.Fatalf("data = %v", data)
 	}
-	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
-		t.Fatalf("temp file remains: %v", statErr)
-	}
+	requireTempGone(t, path)
 }
 
 func TestDarwinListedTypeNoBytes(t *testing.T) {
@@ -183,14 +186,7 @@ func TestDarwinMissingOsascript(t *testing.T) {
 }
 
 func TestDarwinUnsetRunner(t *testing.T) {
-	prevDarwin := darwinClipboard
-	prevRun := runPasteboard
-	darwinClipboard = true
-	runPasteboard = nil
-	t.Cleanup(func() {
-		darwinClipboard = prevDarwin
-		runPasteboard = prevRun
-	})
+	stubPasteboard(t, nil)
 	_, _, err := Read()
 	if err == nil || errors.Is(err, ErrTool) || err.Error() != "paste needs osascript" {
 		t.Fatalf("err = %v", err)
@@ -207,7 +203,5 @@ func TestDarwinTempRemovedOnFailure(t *testing.T) {
 	if err == nil || errors.Is(err, ErrNone) {
 		t.Fatalf("err = %v", err)
 	}
-	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
-		t.Fatalf("temp file remains: %v", statErr)
-	}
+	requireTempGone(t, path)
 }

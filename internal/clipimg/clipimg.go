@@ -25,6 +25,16 @@ var ErrNone = errors.New("clipboard has no image")
 // ErrTool means neither wl-paste nor xclip is installed.
 var ErrTool = errors.New("paste needs wl-paste or xclip")
 
+// errNeedsOsascript means the Mac pasteboard runner is missing.
+var errNeedsOsascript = errors.New("paste needs osascript")
+
+func clipTooLarge(n int) error {
+	if n > maxBytes {
+		return fmt.Errorf("clipboard image is larger than %dMB", maxBytes>>20)
+	}
+	return nil
+}
+
 // darwinClipboard selects the macOS pasteboard reader. clipimg_darwin.go
 // turns it on. Tests on other systems set it and replace runPasteboard.
 var darwinClipboard bool
@@ -73,7 +83,7 @@ func readClipboard() ([]byte, error) {
 
 func readDarwinClipboard() ([]byte, error) {
 	if runPasteboard == nil {
-		return nil, errors.New("paste needs osascript")
+		return nil, errNeedsOsascript
 	}
 	f, err := os.CreateTemp("", "owui-paste-")
 	if err != nil {
@@ -109,8 +119,8 @@ func readDarwinClipboard() ([]byte, error) {
 	if len(data) == 0 {
 		return nil, errors.New("pasteboard returned no bytes")
 	}
-	if len(data) > maxBytes {
-		return nil, fmt.Errorf("clipboard image is larger than %dMB", maxBytes>>20)
+	if err := clipTooLarge(len(data)); err != nil {
+		return nil, err
 	}
 	return data, nil
 }
@@ -171,8 +181,8 @@ func output(name string, args ...string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(out) > maxBytes {
-		return nil, fmt.Errorf("clipboard image is larger than %dMB", maxBytes>>20)
+	if err := clipTooLarge(len(out)); err != nil {
+		return nil, err
 	}
 	return out, nil
 }

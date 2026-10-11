@@ -23,7 +23,7 @@ func execOsascript(script, path string) (string, error) {
 	cmd := exec.CommandContext(ctx, bin, "-e", script, path)
 	out, err := cmd.Output()
 	if errors.Is(err, os.ErrNotExist) {
-		return "", fmt.Errorf("paste needs osascript")
+		return "", errNeedsOsascript
 	}
 	if ctx.Err() != nil {
 		return "", fmt.Errorf("clipboard timed out")
