@@ -1,6 +1,8 @@
 package clipimg
 
 import (
+	"errors"
+	"os"
 	"strings"
 	"testing"
 )
@@ -78,5 +80,119 @@ func TestPasteboardScript(t *testing.T) {
 	}
 	if strings.Contains(pasteboardScript, "«class PNGf»") {
 		t.Fatal("script reads the legacy PNGf class")
+	}
+}
+
+func stubPasteboard(t *testing.T, run func(script, path string) (string, error)) {
+	t.Helper()
+	prevDarwin := darwinClipboard
+	prevRun := runPasteboard
+	darwinClipboard = true
+	runPasteboard = run
+	t.Cleanup(func() {
+		darwinClipboard = prevDarwin
+		runPasteboard = prevRun
+	})
+}
+
+func TestDarwinNone(t *testing.T) {
+	var path string
+	stubPasteboard(t, func(script, dest string) (string, error) {
+		if script != pasteboardScript {
+			t.Fatal("runner was not given the pasteboard script")
+		}
+		path = dest
+		return "none\n", nil
+	})
+	t.Setenv("WAYLAND_DISPLAY", "wayland-0")
+	_, _, err := Read()
+	if !errors.Is(err, ErrNone) {
+		t.Fatalf("err = %v", err)
+	}
+	if path == "" {
+		t.Fatal("runner was not called")
+	}
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Fatalf("temp file remains: %v", statErr)
+	}
+}
+
+func TestDarwinPNG(t *testing.T) {
+	png := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0x00}
+	var path string
+	stubPasteboard(t, func(script, dest string) (string, error) {
+		path = dest
+		info, err := os.Stat(dest)
+		if err != nil {
+			return "", err
+		}
+		if info.Mode().Perm() != 0o600 {
+			t.Fatalf("mode = %o", info.Mode().Perm())
+		}
+		if err := os.WriteFile(dest, png, 0o600); err != nil {
+			return "", err
+		}
+		return "public.png", nil
+	})
+	mime, data, err := Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mime != "image/png" {
+		t.Fatalf("mime = %q", mime)
+	}
+	if string(data) != string(png) {
+		t.Fatalf("data = %v", data)
+	}
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Fatalf("temp file remains: %v", statErr)
+	}
+}
+
+func TestDarwinListedTypeNoBytes(t *testing.T) {
+	stubPasteboard(t, func(script, dest string) (string, error) {
+		return "public.png", nil
+	})
+	_, _, err := Read()
+	if err == nil || errors.Is(err, ErrNone) || err.Error() == "clipboard image is not a png, jpeg, gif, or webp" {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestDarwinTooLarge(t *testing.T) {
+	stubPasteboard(t, func(script, dest string) (string, error) {
+		if err := os.WriteFile(dest, make([]byte, maxBytes+1), 0o600); err != nil {
+			return "", err
+		}
+		return "public.png", nil
+	})
+	_, _, err := Read()
+	if err == nil || err.Error() != "clipboard image is larger than 8MB" {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestDarwinMissingOsascript(t *testing.T) {
+	stubPasteboard(t, func(script, dest string) (string, error) {
+		return "", errors.New("paste needs osascript")
+	})
+	_, _, err := Read()
+	if err == nil || errors.Is(err, ErrTool) || err.Error() == ErrTool.Error() {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestDarwinTempRemovedOnFailure(t *testing.T) {
+	var path string
+	stubPasteboard(t, func(script, dest string) (string, error) {
+		path = dest
+		return "", errors.New("osascript failed")
+	})
+	_, _, err := Read()
+	if err == nil || errors.Is(err, ErrNone) {
+		t.Fatalf("err = %v", err)
+	}
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Fatalf("temp file remains: %v", statErr)
 	}
 }

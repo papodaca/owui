@@ -24,6 +24,14 @@ var ErrNone = errors.New("clipboard has no image")
 // ErrTool means neither wl-paste nor xclip is installed.
 var ErrTool = errors.New("paste needs wl-paste or xclip")
 
+// darwinClipboard selects the macOS pasteboard reader. clipimg_darwin.go
+// turns it on. Tests on other systems set it and replace runPasteboard.
+var darwinClipboard bool
+
+// runPasteboard runs pasteboardScript and writes image bytes to path.
+// clipimg_darwin.go installs the osascript command. Tests install a fake.
+var runPasteboard func(script, path string) (token string, err error)
+
 // Read returns the clipboard image bytes. The MIME type is sniffed from the
 // bytes, not from the clipboard label.
 func Read() (mime string, data []byte, err error) {
@@ -44,6 +52,9 @@ func DataURL(mime string, data []byte) string {
 }
 
 func readClipboard() ([]byte, error) {
+	if darwinClipboard {
+		return readDarwinClipboard()
+	}
 	wayland := os.Getenv("WAYLAND_DISPLAY") != ""
 	haveWL := look("wl-paste")
 	haveX := look("xclip")
@@ -57,6 +68,45 @@ func readClipboard() ([]byte, error) {
 	default:
 		return nil, ErrTool
 	}
+}
+
+func readDarwinClipboard() ([]byte, error) {
+	f, err := os.CreateTemp("", "owui-paste-")
+	if err != nil {
+		return nil, err
+	}
+	path := f.Name()
+	if err := f.Close(); err != nil {
+		os.Remove(path)
+		return nil, err
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		os.Remove(path)
+		return nil, err
+	}
+	defer os.Remove(path)
+
+	if runPasteboard == nil {
+		return nil, errors.New("paste needs osascript")
+	}
+	token, err := runPasteboard(pasteboardScript, path)
+	if err != nil {
+		return nil, err
+	}
+	if pasteboardMIME(token) == "" {
+		return nil, ErrNone
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, errors.New("pasteboard returned no bytes")
+	}
+	if len(data) > maxBytes {
+		return nil, fmt.Errorf("clipboard image is larger than %dMB", maxBytes>>20)
+	}
+	return data, nil
 }
 
 func look(name string) bool {
