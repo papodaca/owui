@@ -3,6 +3,7 @@ package clipimg
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -88,6 +89,9 @@ func requireTempGone(t *testing.T, path string) {
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("temp file remains: %v", err)
 	}
+	if _, err := os.Stat(filepath.Dir(path)); !os.IsNotExist(err) {
+		t.Fatalf("temp dir remains: %v", err)
+	}
 }
 
 func stubPasteboard(t *testing.T, run func(script, path string) (string, error)) {
@@ -125,6 +129,7 @@ func TestDarwinNone(t *testing.T) {
 func TestDarwinPNG(t *testing.T) {
 	png := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0x00}
 	var path string
+	var opened *os.File
 	stubPasteboard(t, func(script, dest string) (string, error) {
 		path = dest
 		info, err := os.Stat(dest)
@@ -134,7 +139,15 @@ func TestDarwinPNG(t *testing.T) {
 		if info.Mode().Perm() != 0o600 {
 			t.Fatalf("mode = %o", info.Mode().Perm())
 		}
-		if err := os.WriteFile(dest, png, 0o600); err != nil {
+		repl := dest + ".new"
+		if err := os.WriteFile(repl, png, 0o644); err != nil {
+			return "", err
+		}
+		if err := os.Rename(repl, dest); err != nil {
+			return "", err
+		}
+		opened, err = os.Open(dest)
+		if err != nil {
 			return "", err
 		}
 		return "public.png", nil
@@ -149,6 +162,14 @@ func TestDarwinPNG(t *testing.T) {
 	if string(data) != string(png) {
 		t.Fatalf("data = %v", data)
 	}
+	info, err := opened.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("mode = %o", info.Mode().Perm())
+	}
+	opened.Close()
 	requireTempGone(t, path)
 }
 

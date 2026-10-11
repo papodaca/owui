@@ -85,20 +85,25 @@ func readDarwinClipboard() ([]byte, error) {
 	if runPasteboard == nil {
 		return nil, errNeedsOsascript
 	}
-	f, err := os.CreateTemp("", "owui-paste-")
+	dir, err := os.MkdirTemp("", "owui-paste-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(dir)
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return nil, err
+	}
+	f, err := os.CreateTemp(dir, "owui-paste-")
 	if err != nil {
 		return nil, err
 	}
 	path := f.Name()
 	if err := f.Close(); err != nil {
-		os.Remove(path)
 		return nil, err
 	}
 	if err := os.Chmod(path, 0o600); err != nil {
-		os.Remove(path)
 		return nil, err
 	}
-	defer os.Remove(path)
 
 	token, err := runPasteboard(pasteboardScript, path)
 	if err != nil {
@@ -106,6 +111,10 @@ func readDarwinClipboard() ([]byte, error) {
 	}
 	if pasteboardMIME(token) == "" {
 		return nil, ErrNone
+	}
+	// writeToFile:atomically: replaces the inode, so the mode has to be set again.
+	if err := os.Chmod(path, 0o600); err != nil {
+		return nil, err
 	}
 	in, err := os.Open(path)
 	if err != nil {
